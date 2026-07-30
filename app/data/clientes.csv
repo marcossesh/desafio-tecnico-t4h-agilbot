@@ -1,0 +1,6 @@
+cpf,nome,data_nascimento,email,telefone,profissao,tipo_emprego,renda_declarada,limite_atual,score,status_conta,data_abertura
+11144477735,Ana Souza,1990-05-14,ana.souza@email.com,(11) 98888-1001,Engenheira,formal,9500.00,5000.00,540,ativa,2018-03-10
+22255588846,Diego Rocha,1995-07-19,diego.rocha@email.com,(41) 95555-4004,Vendedor,autonomo,2600.00,800.00,380,ativa,2022-11-30
+33366699957,Carla Mendes,1978-03-27,carla.mendes@email.com,(31) 96666-3003,Médica,formal,18000.00,15000.00,655,ativa,2015-01-05
+12345678909,Bruno Lima,1985-11-02,bruno.lima@email.com,(21) 97777-2002,Motorista de aplicativo,autonomo,2100.00,500.00,280,ativa,2020-07-22
+98765432100,Felipe Nunes,1988-09-08,felipe.nunes@email.com,(51) 94444-5005,Professor,formal,7000.00,10000.00,520,bloqueada,2019-06-17
