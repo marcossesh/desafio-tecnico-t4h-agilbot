@@ -1,0 +1,52 @@
+name: agilbot
+
+services:
+  postgres:
+    # Um único Postgres atende os checkpoints das sessões (LangGraph) e os vetores da
+    # base de conhecimento (pgvector).
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: agilbot
+      POSTGRES_PASSWORD: agilbot
+      POSTGRES_DB: agilbot
+    ports:
+      # Publicado só para inspeção externa (psql). Se a 5432 já estiver ocupada na
+      # máquina, suba com POSTGRES_PORT=5433.
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agilbot -d agilbot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile
+      args:
+        # APP_UID e não UID: `UID` é readonly no bash, e `UID=$(id -u) docker compose ...`
+        # falharia na linha de comando do avaliador.
+        UID: ${APP_UID:-1000}
+        GID: ${APP_GID:-1000}
+    env_file:
+      - ../.env
+    environment:
+      # Dentro da rede do compose o host do banco é o nome do serviço.
+      POSTGRES_URL: postgresql://agilbot:agilbot@postgres:5432/agilbot
+    ports:
+      - "8501:8501"
+    volumes:
+      # Bind mount obrigatório: `clientes.csv` é reescrito (score e limite) e
+      # `solicitacoes_aumento_limite.csv` é gerado em runtime. Sem isto, as mudanças
+      # ficariam presas no container e não haveria como inspecionar o resultado.
+      - ../app/data:/app/app/data
+      - ../app/logs:/app/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
