@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  qualidade:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Instalar dependências
+        run: uv sync --frozen
+
+      - name: Lint (ruff)
+        run: uv run ruff check app tests scripts
+
+      # A suíte inteira roda com um LLM falso e a API de câmbio mockada: nenhuma chave
+      # de API é necessária no CI, e nenhum teste depende da rede.
+      - name: Testes
+        run: uv run pytest

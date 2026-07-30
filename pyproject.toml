@@ -1,0 +1,65 @@
+[project]
+name = "agilbot"
+version = "0.1.0"
+description = "Agente Bancário Inteligente do Banco Ágil — 4 agentes LangGraph com UI Streamlit"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+
+dependencies = [
+    # Orquestração dos agentes
+    "langgraph>=0.2.60",
+    "langchain-core>=0.3.29",
+    # Providers de LLM: Gemini (primário) -> Groq (fallback)
+    "langchain-google-genai>=2.0.8",
+    "langchain-groq>=0.2.3",
+    # Persistência de sessão e RAG (mesmo Postgres)
+    "langgraph-checkpoint-postgres>=2.0.9",
+    "langchain-postgres>=0.0.12",
+    "langchain-text-splitters>=0.3.5",
+    "psycopg[binary,pool]>=3.2.3",
+    # UI
+    "streamlit>=1.41.1",
+    # Base
+    "pydantic>=2.10.4",
+    "pydantic-settings>=2.7.1",
+    "python-dotenv>=1.0.1",
+    "requests>=2.32.3",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.4",
+    "pytest-cov>=6.0.0",
+    "requests-mock>=1.12.1",
+    "ruff>=0.8.6",
+]
+
+# O código é resolvido via PYTHONPATH=app (ver Makefile, Dockerfile e README);
+# o projeto não é empacotado como biblioteca.
+[tool.uv]
+package = false
+
+# --- Qualidade e testes: tudo centralizado aqui, sem ruff.toml/pytest.ini avulsos ---
+
+[tool.ruff]
+line-length = 98
+target-version = "py312"
+src = ["app", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "RUF"]
+ignore = [
+    "RUF001",  # caracteres "ambíguos" acusam falso positivo em texto pt-BR acentuado
+    "RUF002",
+    "RUF003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# RUF012 não reconhece campos de modelo Pydantic como tal (BaseChatModel é um BaseModel).
+"tests/fakes.py" = ["RUF012"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["app"]
+addopts = "-q --cov=app/src --cov-report=term-missing"
+filterwarnings = ["ignore::DeprecationWarning"]

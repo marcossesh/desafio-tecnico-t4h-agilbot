@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+
+# Ambiente e segredos
+.env
+
+# Testes e cobertura
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+
+# Artefatos gerados em runtime
+app/logs/
+app/data/solicitacoes_aumento_limite.csv
+app/data/historico_score.csv
+
+# Sistema
+.DS_Store
