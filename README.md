@@ -225,6 +225,14 @@ turno.
 Os cinco que mais mudaram o desenho. Outros dezesseis estão em
 [`docs/DECISOES.md`](docs/DECISOES.md).
 
+| # | Desafio | Solução em uma linha |
+| --- | --- | --- |
+| [1](#1-a-fórmula-de-score-do-enunciado-não-alcança-01000) | A fórmula do enunciado não alcança 0–1000 — a faixa real é ~0–700 | Faixas e scores semeados calibrados na escala real, com teste de regressão sobre o fluxo-vitrine |
+| [2](#2-sanitizar-o-histórico-apagaria-a-memória-entre-turnos) | Tool calls atravessando handoffs quebram o agente de destino — mas sanitizar apaga o CPF entre turnos | Sanitização do histórico **mais** reinjeção de contexto derivado do estado; os dois só funcionam juntos |
+| [3](#3-o-lock-existia-a-serialização-não) | `clientes.csv` perdia 30 de 30 atualizações com duas threads, com o lock no lugar | Uma instância por arquivo, read-modify-write inteiro sob o lock, compare-and-set na gravação |
+| [4](#4-o-modelo-anunciou-um-score-que-não-existia) | A ferramenta gravou 467 e o cliente leu "seu novo score é 780" | Retorno de ferramenta imperativo com um só número, mais guarda de procedência numérica no motor de turno |
+| [5](#5-a-entrevista-respondia-sozinha-a-pergunta-que-não-fez) | A entrevista pulou "possui dívidas?" e preencheu `não` sozinha — 200 pontos de score | Verificação lexical na janela da entrevista; o handler recusa e manda perguntar o que falta |
+
 ### 1. A fórmula de score do enunciado não alcança 0–1000
 
 Os pesos fora o termo de renda somam no máximo **500** (formal 300 + 0 dependentes 100 +
