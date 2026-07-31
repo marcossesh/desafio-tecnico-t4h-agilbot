@@ -33,10 +33,22 @@ def formatar_cpf(cpf: str) -> str:
     return f"{d[:3]}.{d[3:6]}.{d[6:9]}-{d[9:]}"
 
 
+def cpf_mascarado(cpf: str) -> str:
+    """`***.***.777-35` — para log e telemetria.
+
+    CPF é dado pessoal e o log é persistido em `app/logs/`, montado no host. Nenhuma
+    mensagem de log deve carregar o número completo.
+    """
+    d = apenas_digitos(cpf)
+    return f"***.***.{d[6:9]}-{d[9:]}" if len(d) == 11 else "***"
+
+
 def formatar_brl(valor: float) -> str:
-    """Formata em reais no padrão brasileiro (R$ 1.234,56)."""
-    inteiro = f"{valor:,.2f}"
-    return "R$ " + inteiro.replace(",", "\x00").replace(".", ",").replace("\x00", ".")
+    """Formata em reais no padrão brasileiro: `R$ 1.234,56`, `-R$ 1.234,56`."""
+    sinal = "-" if valor < 0 else ""
+    inteiro = f"{abs(valor):,.2f}"
+    corpo = inteiro.replace(",", "\x00").replace(".", ",").replace("\x00", ".")
+    return f"{sinal}R$ {corpo}"
 
 
 def formatar_percentual(taxa: float) -> str:
@@ -48,9 +60,13 @@ _MULTIPLICADORES = {
     "k": 1_000, "mil": 1_000, "m": 1_000_000, "mi": 1_000_000,
     "milhao": 1_000_000, "milhoes": 1_000_000,
 }
+# Ancorado no fim: "10 mil mil" precisa falhar, não virar 10.000 ignorando o excedente.
 _RE_MULTIPLICADOR = re.compile(
-    r"^([\d.,]+)\s*(" + "|".join(sorted(_MULTIPLICADORES, key=len, reverse=True)) + r")\b"
+    r"^([\d.,]+)\s*(" + "|".join(sorted(_MULTIPLICADORES, key=len, reverse=True)) + r")$"
 )
+# Formas aceitas: "4200", "4200.50", "4.200", "1.234.567,89", "4200,50".
+# Milhar só é milhar quando todos os grupos têm 3 dígitos — "1.2.3" não é número.
+_RE_NUMERO = re.compile(r"^(\d{1,3}(\.\d{3})+|\d+)(,\d+)?$|^\d+(\.\d+)?$")
 
 
 def parse_valor_monetario(valor: str | float | int) -> float:
@@ -69,6 +85,12 @@ def parse_valor_monetario(valor: str | float | int) -> float:
         multiplicador = _MULTIPLICADORES[achado.group(2)]
 
     texto = texto.replace(" ", "")
+
+    # Valida a forma ANTES de reinterpretar os separadores. Depois da normalização,
+    # "1.2.3" já teria virado "123" e passaria como número plausível.
+    if not _RE_NUMERO.fullmatch(texto):
+        raise ValueError(f"valor monetário inválido: {valor!r}")
+
     if "," in texto:
         texto = texto.replace(".", "").replace(",", ".")
     elif texto.count(".") > 1 or re.fullmatch(r"\d+\.\d{3}", texto):

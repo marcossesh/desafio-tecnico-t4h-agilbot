@@ -30,6 +30,10 @@ HEADER_HISTORICO_SCORE: Final[list[str]] = [
 ]
 
 MAX_TENTATIVAS_AUTH: Final[int] = 3
+# Limite por CPF, em dimensão que o cliente não controla: o contador do enunciado vive no
+# estado da conversa e zera ao abrir um novo atendimento.
+MAX_FALHAS_POR_CPF: Final[int] = 6
+JANELA_THROTTLE: Final[int] = 300  # segundos
 TAMANHO_CPF: Final[int] = 11
 
 SCORE_MINIMO: Final[int] = 0
@@ -50,6 +54,10 @@ AGENTES: Final[tuple[str, ...]] = ("triagem", "credito", "entrevista", "cambio")
 MAX_ITERACOES_TURNO: Final[int] = 6
 RECURSION_LIMIT: Final[int] = 12
 
+# Janela curta: dois cliques ou dois turnos seguidos com o mesmo valor são o mesmo
+# pedido; repetir depois disso é intenção legítima e merece registro próprio.
+JANELA_IDEMPOTENCIA: Final[int] = 60  # segundos
+
 MOEDA_PADRAO: Final[str] = "USD"
 MOEDA_DESTINO: Final[str] = "BRL"
 TIMEOUT_HTTP: Final[int] = 10
@@ -64,7 +72,17 @@ MSG_INSTABILIDADE: Final[str] = (
     "em alguns instantes?"
 )
 
+# O vazamento é sobre *pessoas e áreas*, não sobre movimentação de dinheiro. A versão
+# anterior casava a palavra "transferência" isolada — e o próprio `tarifas.md` tem uma
+# seção "Transferências" com o TED a R$ 8,50. Dois artefatos corretos em separado que
+# eram incompatíveis juntos: o prompt empurrava o modelo a evitar o termo certo, e o
+# painel de diagnóstico acusava vazamento em resposta legítima.
 REGEX_VAZAMENTO: Final[str] = (
-    r"\b(transferir|transferind|transfer[êe]ncia|setor|departamento|"
-    r"encaminh\w*|redirecion\w*|outro agente|agente de)\b"
+    r"\b(?:transferir|transferindo|transfer[êe]ncia)\s+"
+    r"(?:voc[êe]|o\s+senhor|a\s+senhora|seu\s+atendimento|"
+    r"para\s+(?:o|a)\s+(?:setor|departamento|equipe|atendente|agente))\b"
+    r"|\b(?:outro\s+(?:agente|atendente|setor|departamento)|"
+    r"setor\s+de\s+\w+|departamento\s+de\s+\w+|"
+    r"encaminh\w*\s+(?:voc[êe]|o\s+senhor|a\s+senhora|para)|"
+    r"redirecion\w*\s+(?:voc[êe]|o\s+senhor|a\s+senhora|para))\b"
 )
