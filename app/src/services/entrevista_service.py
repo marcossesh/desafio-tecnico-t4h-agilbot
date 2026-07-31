@@ -4,6 +4,7 @@ from __future__ import annotations
 from pydantic import ValidationError
 
 from src.core.logging import get_logger
+from src.core.utils import cpf_mascarado
 from src.domain.models import Cliente, DadosEntrevista, RegistroScore
 from src.domain.results import ResultadoEntrevista
 from src.repositories.base import RepositoryError
@@ -45,7 +46,7 @@ class EntrevistaService:
         except RepositoryError as exc:
             logger.warning(
                 "Score de %s atualizado, mas não registrado no histórico: %s",
-                cliente.cpf, exc,
+                cpf_mascarado(cliente.cpf), exc,
             )
 
     def registrar(self, cliente: Cliente, **respostas: object) -> ResultadoEntrevista:
@@ -67,7 +68,10 @@ class EntrevistaService:
         try:
             self.clientes.atualizar_score(cliente.cpf, novo_score)
         except RepositoryError as exc:
-            logger.error("Falha ao persistir novo score de %s: %s", cliente.cpf, exc)
+            logger.error(
+                "Falha ao persistir novo score de %s: %s",
+                cpf_mascarado(cliente.cpf), exc,
+            )
             return ResultadoEntrevista(
                 ok=False,
                 mensagem="Não consegui salvar o resultado da entrevista agora.",
