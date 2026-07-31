@@ -98,8 +98,11 @@ class TestEscalaReal:
         assert comum < 601
 
     def test_scores_semeados_vivem_na_escala_da_formula(self, cliente_repo):
-        """Semear scores em escala FICO (720, 850) faria a entrevista derrubar o score de
-        todo cliente — e o fluxo `rejeitado -> entrevista -> aprovado` nunca fecharia."""
+        """Um score semeado fora da escala que a fórmula produz sai REBAIXADO da entrevista.
+
+        Semear em escala FICO (720, 850) põe o cliente numa faixa que ele não consegue
+        reconquistar: a entrevista mais favorável possível devolve ~680. O teto de 700 aqui
+        é o contrato entre `clientes.csv` e a fórmula."""
         for cliente in cliente_repo.listar():
             assert 0 <= cliente.score <= 700, f"{cliente.nome} fora da escala alcançável"
 

@@ -227,7 +227,7 @@ Os cinco que mais mudaram o desenho. Outros dezesseis estão em
 
 | # | Desafio | Solução em uma linha |
 | --- | --- | --- |
-| [1](#1-a-fórmula-de-score-do-enunciado-não-alcança-01000) | A fórmula do enunciado não alcança 0–1000 — a faixa real é ~0–700 | Faixas e scores semeados calibrados na escala real, com teste de regressão sobre o fluxo-vitrine |
+| [1](#1-a-fórmula-de-score-do-enunciado-não-alcança-01000) | A fórmula do enunciado não alcança 0–1000: `801` exige renda 10× as despesas | Faixas e scores semeados calibrados na escala real, com teste de que nenhuma faixa é inalcançável |
 | [2](#2-sanitizar-o-histórico-apagaria-a-memória-entre-turnos) | Tool calls atravessando handoffs quebram o agente de destino — mas sanitizar apaga o CPF entre turnos | Sanitização do histórico **mais** reinjeção de contexto derivado do estado; os dois só funcionam juntos |
 | [3](#3-o-lock-existia-a-serialização-não) | `clientes.csv` perdia 30 de 30 atualizações com duas threads, com o lock no lugar | Uma instância por arquivo, read-modify-write inteiro sob o lock, compare-and-set na gravação |
 | [4](#4-o-modelo-anunciou-um-score-que-não-existia) | A ferramenta gravou 467 e o cliente leu "seu novo score é 780" | Retorno de ferramenta imperativo com um só número, mais guarda de procedência numérica no motor de turno |
@@ -236,16 +236,18 @@ Os cinco que mais mudaram o desenho. Outros dezesseis estão em
 ### 1. A fórmula de score do enunciado não alcança 0–1000
 
 Os pesos fora o termo de renda somam no máximo **500** (formal 300 + 0 dependentes 100 +
-sem dívidas 100). O termo `(renda / (despesas + 1)) × 30` só passa a dominar quando a renda
-é cerca de **17× as despesas** — quando já satura o teto. Na prática, a faixa alcançável é
-~0–700, concentrada entre 450 e 600 para qualquer cliente empregado.
+sem dívidas 100). O resto tem de vir de `(renda / (despesas + 1)) × 30`, e a conta é dura:
+chegar a **801** exige renda ≈ **10×** as despesas; chegar a **1000**, ≈ **16,7×**. Na
+prática a faixa exercida é ~0–700, concentrada entre 450 e 600 para qualquer cliente
+empregado.
 
-Isso quebraria a demonstração central: semear scores em escala FICO (720, 850) faria a
-entrevista **derrubar** o score de todo cliente, e o fluxo `rejeitado → entrevista →
-aprovado` nunca fecharia.
+A consequência é sobre a **calibração dos dados**, não sobre a fórmula: se as faixas e os
+scores semeados não viverem nessa escala, a faixa de topo vira letra morta e um cliente com
+score alto sai **rebaixado** de uma entrevista honesta.
 
 **Solução:** as faixas de `score_limite.csv` e os scores semeados foram calibrados contra a
-escala real da fórmula, e um **teste de regressão** assevera que o cliente do fluxo-vitrine
+escala real, e há dois testes protegendo isso — um assevera que **nenhuma faixa é
+inalcançável** (cada uma tem um perfil que a atinge), outro que o cliente do fluxo-vitrine
 sobe de score **e** muda de faixa. Um ajuste distraído em qualquer dos dois CSVs quebra o
 teste, não a demo.
 
