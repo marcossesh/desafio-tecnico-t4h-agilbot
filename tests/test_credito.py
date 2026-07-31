@@ -178,7 +178,10 @@ class TestHistoricoDeScore:
             diego, renda_mensal=4200, tipo_emprego="autônomo", despesas_fixas=1200,
             num_dependentes=0, tem_dividas="não",
         )
-        credito.solicitar_aumento(cliente_repo.buscar_por_cpf(CPF_DIEGO), 10000)
+        # Como o nó faz: a reavaliação repete o valor de propósito, sob score novo.
+        credito.solicitar_aumento(
+            cliente_repo.buscar_por_cpf(CPF_DIEGO), 10000, reavaliacao=True
+        )
 
         pedidos = solicitacao_repo.listar()
         mudanca = historico_repo.do_cliente(CPF_DIEGO)[0]
@@ -267,7 +270,7 @@ class TestFluxoVitrine:
 
         # 3) Reavaliação: pedido NOVO, o rejeitado permanece como trilha de auditoria.
         atualizado = cliente_repo.buscar_por_cpf(CPF_DIEGO)
-        segunda = credito.solicitar_aumento(atualizado, 10000)
+        segunda = credito.solicitar_aumento(atualizado, 10000, reavaliacao=True)
         assert segunda.status is StatusPedido.APROVADO
         assert cliente_repo.buscar_por_cpf(CPF_DIEGO).limite_atual == 10000.0
 
@@ -298,3 +301,75 @@ class TestFluxoVitrine:
             and atual.score != rejeitada.score_avaliado
         )
         assert deve_reavaliar is True
+
+
+class TestIdempotencia:
+    """Dois cliques ou dois turnos seguidos com o mesmo valor são o mesmo pedido."""
+
+    def test_pedido_identico_em_sequencia_nao_duplica(
+        self, cliente_repo, faixa_repo, solicitacao_repo
+    ):
+        servico = _servico(cliente_repo, faixa_repo, solicitacao_repo)
+        ana = cliente_repo.buscar_por_cpf(CPF_ANA)
+
+        primeiro = servico.solicitar_aumento(ana, 9000)
+        segundo = servico.solicitar_aumento(cliente_repo.buscar_por_cpf(CPF_ANA), 9000)
+
+        assert primeiro.status is StatusPedido.APROVADO
+        assert segundo.status is StatusPedido.INVALIDO
+        assert len(solicitacao_repo.listar()) == 1
+
+    def test_valor_diferente_gera_pedido_novo(
+        self, cliente_repo, faixa_repo, solicitacao_repo
+    ):
+        servico = _servico(cliente_repo, faixa_repo, solicitacao_repo)
+        servico.solicitar_aumento(cliente_repo.buscar_por_cpf(CPF_ANA), 9000)
+        servico.solicitar_aumento(cliente_repo.buscar_por_cpf(CPF_ANA), 12000)
+
+        assert len(solicitacao_repo.listar()) == 2
+
+    def test_reavaliacao_ignora_a_guarda(self, cliente_repo, faixa_repo, solicitacao_repo):
+        """A reavaliação repete o valor sob um score novo: é decisão diferente."""
+        servico = _servico(cliente_repo, faixa_repo, solicitacao_repo)
+        diego = cliente_repo.buscar_por_cpf(CPF_DIEGO)
+
+        servico.solicitar_aumento(diego, 10000)
+        cliente_repo.atualizar_score(CPF_DIEGO, 505)
+        segunda = servico.solicitar_aumento(
+            cliente_repo.buscar_por_cpf(CPF_DIEGO), 10000, reavaliacao=True
+        )
+
+        assert segunda.status is StatusPedido.APROVADO
+        assert len(solicitacao_repo.listar()) == 2
+
+
+class TestReavaliacaoSoQuandoMelhora:
+    def test_score_que_piora_nao_gera_pedido(self, cliente_repo):
+        """Registrar um pedido que o cliente não fez é problema de conformidade na
+        trilha formal — e pior ainda quando o desfecho é rejeição."""
+        from src.agents.credito import _reavaliacao_automatica
+
+        diego = cliente_repo.buscar_por_cpf(CPF_DIEGO)
+        estado = {
+            "cliente": diego.model_copy(update={"score": 200}).model_dump(mode="json"),
+            "ultima_solicitacao": {
+                "linha_idx": 0, "valor_solicitado": 10000,
+                "score_avaliado": 380, "status": "rejeitado",
+            },
+        }
+
+        assert _reavaliacao_automatica(estado) is None
+
+    def test_score_que_melhora_dispara(self, cliente_repo, servicos):
+        from src.agents.credito import _reavaliacao_automatica
+
+        diego = cliente_repo.buscar_por_cpf(CPF_DIEGO)
+        estado = {
+            "cliente": diego.model_copy(update={"score": 505}).model_dump(mode="json"),
+            "ultima_solicitacao": {
+                "linha_idx": 0, "valor_solicitado": 10000,
+                "score_avaliado": 380, "status": "rejeitado",
+            },
+        }
+
+        assert _reavaliacao_automatica(estado) is not None

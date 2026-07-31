@@ -221,3 +221,72 @@ class TestValoresHostis:
             num_dependentes=0, tem_dividas=False,
         )
         assert calcular_score(dados) == 1000
+
+
+class TestVocabularioReal:
+    """O cliente responde com a palavra dele; rejeitar deixa a entrevista sem saída."""
+
+    @pytest.mark.parametrize(
+        ("texto", "esperado"),
+        [
+            ("aposentado", TipoEmprego.FORMAL),
+            ("pensionista", TipoEmprego.FORMAL),
+            ("sou empregado", TipoEmprego.FORMAL),
+            ("servidor publico", TipoEmprego.FORMAL),
+            ("trabalho registrado", TipoEmprego.FORMAL),
+            ("faco bicos", TipoEmprego.AUTONOMO),
+            ("diarista", TipoEmprego.AUTONOMO),
+            ("estudante", TipoEmprego.DESEMPREGADO),
+            ("do lar", TipoEmprego.DESEMPREGADO),
+        ],
+    )
+    def test_perfis_comuns_mapeiam_para_alguma_categoria(self, texto, esperado):
+        assert TipoEmprego.from_texto(texto) is esperado
+
+    def test_desempregado_continua_protegido_da_ampliacao(self):
+        """"empregad" entrou em FORMAL; "desempregad" precisa vencer pela ordem."""
+        assert TipoEmprego.from_texto("desempregado") is TipoEmprego.DESEMPREGADO
+        assert TipoEmprego.from_texto("estou desempregado") is TipoEmprego.DESEMPREGADO
+
+    @pytest.mark.parametrize(
+        "texto", ["estou sem dividas", "zero", "nada", "nunca tive", "negativo", "quitei tudo"]
+    )
+    def test_negativas_coloquiais(self, texto):
+        assert texto_para_booleano(texto) is False
+
+    @pytest.mark.parametrize("texto", ["positivo", "tenho algumas", "claro que sim"])
+    def test_afirmativas_coloquiais(self, texto):
+        assert texto_para_booleano(texto) is True
+
+
+class TestCadastroTolerante:
+    """Dado inválido num campo secundário não pode apagar a identidade do cliente."""
+
+    def test_emprego_desconhecido_nao_invalida_o_cadastro(self):
+        cliente = Cliente(
+            cpf="11122233344", nome="Maria", data_nascimento="1950-01-01",
+            tipo_emprego="cabeleireira aposentada de circo",
+        )
+        assert cliente.nome == "Maria"
+
+    @pytest.mark.parametrize(
+        ("score", "esperado"), [(1500, 1000), (-200, 0), (505, 505), ("abc", 0)]
+    )
+    def test_score_e_ajustado_a_escala_em_vez_de_invalidar(self, score, esperado):
+        cliente = Cliente(
+            cpf="11122233344", nome="X", data_nascimento="1990-01-01", score=score
+        )
+        assert cliente.score == esperado
+
+    def test_valores_negativos_viram_zero(self):
+        cliente = Cliente(
+            cpf="11122233344", nome="X", data_nascimento="1990-01-01",
+            limite_atual=-5000, renda_declarada=-1,
+        )
+        assert (cliente.limite_atual, cliente.renda_declarada) == (0.0, 0.0)
+
+    def test_status_vazio_e_fail_closed(self):
+        cliente = Cliente(
+            cpf="11122233344", nome="X", data_nascimento="1990-01-01", status_conta="",
+        )
+        assert cliente.conta_ativa is False

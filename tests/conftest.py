@@ -25,6 +25,20 @@ CPF_FELIPE = "98765432100"
 
 
 @pytest.fixture(autouse=True)
+def _throttle_limpo():
+    """O contador de tentativas por CPF é global de processo.
+
+    Sem zerar entre testes, falhas de autenticação de um teste bloqueiam o CPF nos
+    seguintes — e a falha aparece longe da causa.
+    """
+    from src.services.auth_service import reset_throttle
+
+    reset_throttle()
+    yield
+    reset_throttle()
+
+
+@pytest.fixture(autouse=True)
 def _sem_escrita_em_producao():
     """Falha o teste que escrever nos CSVs reais do projeto.
 

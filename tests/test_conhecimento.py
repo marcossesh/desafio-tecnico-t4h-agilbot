@@ -1,10 +1,13 @@
 """RAG: carregamento dos documentos e degradação segura sem infraestrutura."""
 from __future__ import annotations
 
+import re
+
 import pytest
 from langchain_core.documents import Document
 
 from src.core.config import Settings
+from src.core.constants import REGEX_VAZAMENTO
 from src.rag.loader import DOCUMENTOS_DIR, carregar_documentos, hash_do_corpus
 from src.services.knowledge_service import KnowledgeService
 
@@ -121,3 +124,39 @@ class TestFerramentaCondicional:
         usar_settings(monkeypatch, GOOGLE_API_KEY="k", POSTGRES_URL="postgresql://x")
 
         assert "consultar_base_conhecimento" not in {t.name for t in triagem.TOOLS}
+
+
+class TestGuardaDeVazamento:
+    """Confronta dois artefatos escritos corretamente em separado e antes incompatíveis."""
+
+    def test_detector_nao_acusa_o_proprio_corpus(self):
+        """O RAG fala de TED e transferências; a guarda não pode marcar isso."""
+        padrao = re.compile(REGEX_VAZAMENTO, re.IGNORECASE)
+        for doc in carregar_documentos():
+            achado = padrao.search(doc.page_content)
+            assert not achado, f"{doc.metadata['fonte']}.md acusado por {achado.group(0)!r}"
+
+    @pytest.mark.parametrize(
+        "frase",
+        [
+            "Vou transferir você para o setor de crédito.",
+            "Vou encaminhar você para o departamento responsável.",
+            "Outro agente vai te ajudar com isso.",
+            "Vou redirecionar você para a equipe de câmbio.",
+            "Deixa eu transferir seu atendimento.",
+        ],
+    )
+    def test_vazamento_real_continua_sendo_acusado(self, frase):
+        assert re.compile(REGEX_VAZAMENTO, re.IGNORECASE).search(frase)
+
+    @pytest.mark.parametrize(
+        "frase",
+        [
+            "A tarifa de transferência TED é R$ 8,50.",
+            "Você pode transferir via Pix sem custo.",
+            "Transferências entre contas Banco Ágil são isentas.",
+            "O agente de viagens não é do banco.",
+        ],
+    )
+    def test_uso_legitimo_nao_e_acusado(self, frase):
+        assert not re.compile(REGEX_VAZAMENTO, re.IGNORECASE).search(frase)
