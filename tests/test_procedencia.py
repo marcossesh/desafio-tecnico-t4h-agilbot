@@ -8,6 +8,8 @@ aprová-lo.
 """
 from __future__ import annotations
 
+from typing import ClassVar
+
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
@@ -244,6 +246,42 @@ class TestMotorPublicaOSinal:
         updates, _ = run_agent_turn({"messages": []}, "credito", "PROMPT", [], {})
 
         assert updates["numeros_inventados"] == []
+
+
+class TestHonestidadeSobreOEscopo:
+    """O prompt promete que crédito não registra dado financeiro. Isso precisa ser verdade.
+
+    O agente respondeu "Compreendi sua renda" a um cliente que informou renda fora da
+    entrevista — sem ter registrado coisa alguma. A instrução que corrige isso ("aqui você
+    NÃO tem como registrar") vira mentira no dia em que alguém adicionar a ferramenta e
+    esquecer do prompt. Este teste é o alarme para esse dia.
+    """
+
+    FERRAMENTAS_DE_ESCRITA_FINANCEIRA: ClassVar[set[str]] = {
+        "registrar_entrevista", "atualizar_score",
+    }
+
+    def test_credito_nao_registra_dados_da_entrevista(self, monkeypatch):
+        from src.agents import credito
+
+        monkeypatch.setattr(
+            "src.agents.credito.get_settings",
+            lambda: __import__(
+                "src.core.config", fromlist=["Settings"]
+            ).Settings(GOOGLE_API_KEY="", POSTGRES_URL=""),
+        )
+        nomes = {t.name for t in credito.tools()}
+
+        assert not (nomes & self.FERRAMENTAS_DE_ESCRITA_FINANCEIRA)
+        assert "iniciar_entrevista" in nomes  # o caminho honesto existe
+
+    def test_so_a_entrevista_escreve_score(self):
+        from src.agents import cambio, entrevista, triagem
+
+        assert "registrar_entrevista" in {t.name for t in entrevista.TOOLS}
+        for ferramentas in (triagem.TOOLS, cambio.TOOLS_BASE):
+            nomes = {t.name for t in ferramentas}
+            assert not (nomes & self.FERRAMENTAS_DE_ESCRITA_FINANCEIRA)
 
 
 def test_chama_disponivel_para_roteiros():
