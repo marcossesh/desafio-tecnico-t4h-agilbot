@@ -11,7 +11,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from src.agents.contexto import render_contexto
 from src.core.constants import MAX_ITERACOES_TURNO, MSG_INSTABILIDADE, REGEX_VAZAMENTO
 from src.core.logging import get_logger
-from src.core.utils import texto_da_mensagem
+from src.core.utils import numeros_do_texto, texto_da_mensagem
 from src.providers.llm import LLMIndisponivelError, get_chat_model
 
 logger = get_logger(__name__)
@@ -82,6 +82,41 @@ def _detectar_vazamento(mensagens: list, agente: str) -> bool:
                 )
                 return True
     return False
+
+
+def _detectar_numeros_inventados(
+    novas: list, prompt: str, historico: list, agente: str
+) -> list[float]:
+    """Acusa números que o atendente citou sem ter recebido de lugar nenhum.
+
+    Um score, um limite ou uma taxa estimados pelo modelo são o pior tipo de falha num
+    contexto financeiro: número plausível, errado, com aparência de resposta normal. Foi
+    exatamente o que aconteceu — a ferramenta devolveu `540 -> 467` e o cliente leu 780.
+
+    A regra é o complemento da sanitização: tudo que o modelo pôde legitimamente ver
+    neste turno é autorizado — o system prompt (que já inclui o bloco de contexto), a
+    conversa que sobreviveu à sanitização e o retorno das ferramentas deste turno. O que
+    aparecer fora disso foi inventado. É diagnóstico, não bloqueio: acende o painel e
+    entra no log, sem tirar a resposta do cliente do ar.
+    """
+    autorizados = numeros_do_texto(prompt)
+    for msg in historico:
+        autorizados |= numeros_do_texto(texto_da_mensagem(msg.content))
+    for msg in novas:
+        if isinstance(msg, ToolMessage):
+            autorizados |= numeros_do_texto(texto_da_mensagem(msg.content))
+
+    inventados: set[float] = set()
+    for msg in novas:
+        if isinstance(msg, AIMessage) and (texto := texto_da_mensagem(msg.content)):
+            inventados |= numeros_do_texto(texto) - autorizados
+
+    if inventados:
+        logger.warning(
+            "Números sem procedência na resposta do agente %s: %s",
+            agente, sorted(inventados),
+        )
+    return sorted(inventados)
 
 
 def _nome_do_provider(resposta: AIMessage) -> str:
@@ -180,5 +215,8 @@ def run_agent_turn(
             novas_mensagens.append(redigida)
 
     updates["vazamento_detectado"] = _detectar_vazamento(novas_mensagens, agent_name)
+    updates["numeros_inventados"] = _detectar_numeros_inventados(
+        novas_mensagens, prompt, historico, agent_name
+    )
     updates["messages"] = novas_mensagens
     return updates, destino

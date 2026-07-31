@@ -96,6 +96,7 @@ class Atendimento:
             "provider configurado": self.provider,
             "sessões": self.persistencia,
             "vazamento detectado": bool(estado.get("vazamento_detectado")),
+            "números sem procedência": estado.get("numeros_inventados") or "-",
         }
 
 

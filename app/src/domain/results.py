@@ -37,6 +37,8 @@ class ResultadoAumento(BaseModel):
     linha_idx: int | None = None
     score_avaliado: int | None = None
     cliente_atualizado: Cliente | None = None
+    # Rejeitado por estar acima do teto de TODAS as faixas: nenhuma entrevista reverte.
+    acima_do_teto_global: bool = False
 
     @property
     def aprovado(self) -> bool:

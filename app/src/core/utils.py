@@ -111,6 +111,49 @@ def parse_valor_monetario(valor: str | float | int) -> float:
     return resultado
 
 
+_RE_TOKEN_NUMERICO = re.compile(r"\d[\d.,]*")
+
+
+def _leituras(token: str) -> set[float]:
+    """Todas as leituras plausíveis de um token numérico.
+
+    `15.000` é milhar em português e decimal em inglês. Como esta função alimenta uma
+    guarda de diagnóstico, a ambiguidade se resolve devolvendo as DUAS leituras: perder
+    sensibilidade é barato, acusar um número legítimo custa a confiança na guarda.
+    """
+    limpo = token.rstrip(".,")
+    if not limpo:
+        return set()
+
+    candidatos = {limpo}
+    if "," in limpo:
+        candidatos.add(limpo.replace(".", "").replace(",", "."))
+    elif limpo.count(".") > 1 or re.fullmatch(r"\d+\.\d{3}", limpo):
+        candidatos.add(limpo.replace(".", ""))
+
+    valores: set[float] = set()
+    for candidato in candidatos:
+        try:
+            valor = float(candidato)
+        except ValueError:
+            continue
+        if math.isfinite(valor):
+            valores.add(round(valor, 2))
+    return valores
+
+
+def numeros_do_texto(texto: str) -> set[float]:
+    """Valores numéricos citados num texto, em forma canônica.
+
+    Serve para confrontar o que o atendente escreveu com o que ele tinha autorização
+    para saber — score, limite, taxa e cotação nunca podem ser estimados.
+    """
+    numeros: set[float] = set()
+    for token in _RE_TOKEN_NUMERICO.findall(texto or ""):
+        numeros |= _leituras(token)
+    return numeros
+
+
 def texto_da_mensagem(content: object) -> str:
     """Extrai o texto de um `content` de mensagem."""
     if isinstance(content, str):

@@ -32,6 +32,13 @@ def render_sidebar(debug: dict, finished: bool) -> None:
         if debug.get("vazamento detectado"):
             st.warning("Possível menção a transição entre agentes na última resposta.")
 
+        inventados = debug.get("números sem procedência")
+        if isinstance(inventados, list) and inventados:
+            st.warning(
+                "A última resposta cita números que nenhuma ferramenta devolveu: "
+                f"{', '.join(str(n) for n in inventados)}."
+            )
+
         with st.expander("Diagnóstico", expanded=False):
             if debug:
                 st.json(debug, expanded=True)

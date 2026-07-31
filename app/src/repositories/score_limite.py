@@ -32,3 +32,11 @@ class FaixaScoreRepository:
 
     def faixa_para(self, score: int) -> FaixaScore | None:
         return next((f for f in self.listar() if f.contem(score)), None)
+
+    def teto_maximo(self) -> float:
+        """Maior limite que a política concede em qualquer faixa.
+
+        Acima dele nenhum score aprova o pedido — é o que separa "seu score não alcança"
+        de "esse valor não existe neste banco".
+        """
+        return max(f.limite_maximo for f in self.listar())

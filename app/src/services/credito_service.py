@@ -52,6 +52,17 @@ class CreditoService:
             )
         return faixa, ""
 
+    def _acima_do_teto_global(self, novo_limite: float) -> bool:
+        """Nenhum score da política aprova este valor.
+
+        Sem isso o agente oferecia a entrevista financeira para um pedido de R$ 1 bilhão:
+        um caminho que nenhum recálculo de score pode fazer dar certo.
+        """
+        try:
+            return novo_limite > self.faixas.teto_maximo()
+        except RepositoryError:
+            return False
+
     def consultar_limite(self, cliente: Cliente) -> ResumoLimite:
         faixa, motivo = self._faixa_do_cliente(cliente)
         if faixa is None:
@@ -170,6 +181,7 @@ class CreditoService:
                     f"máximo para o score atual ({cliente.score}) é "
                     f"{formatar_brl(faixa.limite_maximo)}."
                 ),
+                acima_do_teto_global=self._acima_do_teto_global(novo_limite),
                 limite_maximo=faixa.limite_maximo,
                 taxa_juros_mensal=faixa.taxa_juros_mensal,
                 solicitacao=decidida,

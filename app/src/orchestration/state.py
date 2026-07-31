@@ -33,9 +33,13 @@ class AgentState(TypedDict, total=False):
 
     ultima_solicitacao: UltimaSolicitacao | None
     entrevista_oferecida: bool
+    # Índice em `messages` onde a entrevista começou — delimita a janela em que as
+    # perguntas precisam ter sido feitas.
+    entrevista_inicio: int | None
 
     llm_provider: str
     vazamento_detectado: bool
+    numeros_inventados: list[float]
 
 
 def estado_inicial() -> AgentState:
@@ -51,6 +55,8 @@ def estado_inicial() -> AgentState:
         finished=False,
         ultima_solicitacao=None,
         entrevista_oferecida=False,
+        entrevista_inicio=None,
         llm_provider="",
         vazamento_detectado=False,
+        numeros_inventados=[],
     )

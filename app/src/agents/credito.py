@@ -109,6 +109,19 @@ def _handler_solicitar_aumento(args: dict, state: dict) -> tuple[str, dict]:
     efeitos = {**_efeitos_da_solicitacao(resultado), **_atualizar_cliente(resultado)}
 
     if resultado.status is StatusPedido.REJEITADO:
+        # Acima do teto de todas as faixas, a entrevista não é um caminho: é uma promessa
+        # que nenhum recálculo de score pode cumprir.
+        if resultado.acima_do_teto_global:
+            return (
+                interno(
+                    f"{resultado.mensagem} Esse valor está acima do teto que o banco "
+                    "concede em qualquer faixa de score, então NÃO ofereça a entrevista "
+                    "financeira: ela não mudaria o resultado. Informe com cordialidade e "
+                    "convide o cliente a pedir um valor dentro do teto informado."
+                ),
+                efeitos,
+            )
+
         efeitos["entrevista_oferecida"] = True
         return (
             interno(
