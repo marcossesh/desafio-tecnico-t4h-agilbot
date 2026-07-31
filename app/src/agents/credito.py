@@ -127,16 +127,20 @@ def _reavaliacao_automatica(state: dict) -> dict | None:
     ultima = state.get("ultima_solicitacao") or {}
     cliente = cliente_do_estado(state)
 
+    # A condição é "melhorou", não "mudou". Com `!=`, uma entrevista que derruba o score
+    # (o cliente revela dívidas e desemprego) fazia o sistema registrar, por conta
+    # própria, um pedido de aumento que o cliente nunca fez — e ainda rejeitá-lo. Pedido
+    # sem origem numa intenção do cliente é problema de conformidade na trilha formal.
     if (
         cliente is None
         or ultima.get("status") != StatusPedido.REJEITADO.value
         or ultima.get("score_avaliado") is None
-        or cliente.score == ultima["score_avaliado"]
+        or cliente.score <= ultima["score_avaliado"]
     ):
         return None
 
     resultado = get_services().credito.solicitar_aumento(
-        cliente, float(ultima.get("valor_solicitado", 0))
+        cliente, float(ultima.get("valor_solicitado", 0)), reavaliacao=True
     )
     return {**_efeitos_da_solicitacao(resultado), **_atualizar_cliente(resultado),
             "_mensagem_reavaliacao": resultado.mensagem}
