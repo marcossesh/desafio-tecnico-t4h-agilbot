@@ -1,15 +1,14 @@
-"""Interface do atendimento do Banco Ágil."""
+"""Interface do atendimento do Banco Ágil.
+
+Entrypoint fino: configura a página, delega o desenho a `ui.tela` e a conversa a
+`ui.service`. Nenhuma regra de negócio vive aqui.
+"""
 from __future__ import annotations
 
 import streamlit as st
 
-from ui.components.chat import AVATARES, render_boas_vindas, render_historico
-from ui.components.sidebar import render_sidebar
-from ui.state import get_atendimento, init_session
-from ui.styles import apply_styles, render_header
-
-PLACEHOLDER_ATIVO = "Digite sua mensagem..."
-PLACEHOLDER_ENCERRADO = "Atendimento encerrado. Clique em 'Novo atendimento'."
+from ui import tela
+from ui.state import iniciar, sessao_atual
 
 st.set_page_config(
     page_title="Banco Ágil — Atendimento",
@@ -19,36 +18,36 @@ st.set_page_config(
 )
 
 
-def _enviar(mensagem: str) -> None:
-    st.session_state.historico.append({"role": "user", "content": mensagem})
-    with st.chat_message("user", avatar=AVATARES["user"]):
-        st.markdown(mensagem)
+def _turno(texto: str) -> None:
+    """Um turno completo: eco da fala, invocação do grafo, atualização da sessão."""
+    st.session_state.conversa.append({"role": "user", "content": texto})
+    tela.eco_do_cliente(texto)
 
-    with st.spinner("Atendente digitando..."):
-        resposta = get_atendimento().responder(st.session_state.session_id, mensagem)
+    with st.spinner(tela.AGUARDE):
+        resposta = sessao_atual().responder(st.session_state.sid, texto)
 
-    st.session_state.debug = resposta.debug
-    st.session_state.finished = resposta.finished
-    st.session_state.historico.append({"role": "assistant", "content": resposta.texto})
+    st.session_state.conversa.append({"role": "assistant", "content": resposta.texto})
+    st.session_state.diagnostico = resposta.debug
+    st.session_state.encerrado = resposta.finished
     st.rerun()
 
 
 def main() -> None:
-    apply_styles()
-    init_session()
+    tela.preparar()
+    iniciar()
 
-    render_sidebar(st.session_state.debug, st.session_state.finished)
-    render_header()
-    render_boas_vindas(st.session_state.historico)
-    render_historico(st.session_state.historico)
+    tela.faixa_de_topo()
+    tela.painel(st.session_state.diagnostico, st.session_state.encerrado)
+    tela.conversa(st.session_state.conversa)
 
-    encerrado = st.session_state.finished
-    mensagem = st.chat_input(
-        PLACEHOLDER_ENCERRADO if encerrado else PLACEHOLDER_ATIVO, disabled=encerrado
-    )
-    if mensagem:
-        _enviar(mensagem)
+    fechado = st.session_state.encerrado
+    if texto := st.chat_input(
+        tela.CAMPO_ENCERRADO if fechado else tela.CAMPO_ATIVO, disabled=fechado
+    ):
+        _turno(texto)
 
 
 if __name__ == "__main__":
+    # O `streamlit run` executa este arquivo como `__main__`; o guard mantém o módulo
+    # importável, e é isso que permite o teste de import cobrir a UI sem subir servidor.
     main()

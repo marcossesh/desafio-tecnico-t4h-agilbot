@@ -67,7 +67,7 @@ negócio conhece o LLM, e nenhum agente conhece o formato dos CSVs.
 
 ```
 app/
-  ui/            Streamlit: entrypoint, sessão, estilos e componentes
+  ui/            Streamlit: entrypoint, sessão, tela e ponte com o grafo
   src/
     core/          config, constants, logging, utils        (infra transversal)
     domain/        models, enums, results (Pydantic)        (puro, sem I/O)

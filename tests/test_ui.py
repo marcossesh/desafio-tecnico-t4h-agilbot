@@ -33,11 +33,9 @@ def atendimento(monkeypatch, servicos) -> Atendimento:
 class TestImports:
     def test_modulos_da_ui_importam(self):
         """Erro de import na UI só apareceria ao subir o Streamlit — barato de cobrir aqui."""
-        import ui.components.chat
-        import ui.components.sidebar
         import ui.state
         import ui.streamlit_app
-        import ui.styles  # noqa: F401
+        import ui.tela  # noqa: F401
 
 
 class TestSessao:
@@ -159,7 +157,7 @@ class TestRetomadaDeSessao:
         monkeypatch.setattr("src.agents.base.get_chat_model", lambda: fake)
         atendimento.responder("sessao-refresh", "meu CPF é 111.444.777-35")
 
-        # É o que `init_session` faz ao encontrar o `sid` na query string.
+        # É o que `iniciar()` faz ao encontrar o `sid` na query string.
         visivel = historico_visivel(atendimento, "sessao-refresh")
 
         assert [m["role"] for m in visivel] == ["user", "assistant"]
