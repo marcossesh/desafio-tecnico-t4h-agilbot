@@ -248,3 +248,52 @@ def _autenticar(conversa, cpf: str, nascimento: str) -> None:
         chama("autenticar_cliente", cpf=cpf, data_nascimento=nascimento),
         fala("Olá! Em que posso ajudar?"),
     )
+
+
+class TestCicloDeVida:
+    """`finished` precisa ser barreira de domínio, não `disabled` do widget de chat."""
+
+    def _encerrar(self, conversa) -> None:
+        _autenticar(conversa, CPF_ANA, "14/05/1990")
+        conversa.turno("era só isso, obrigado",
+                       chama("encerrar_atendimento"), fala("Foi um prazer! Até logo."))
+        assert conversa.estado["finished"] is True
+
+    def test_atendimento_encerrado_nao_executa_operacao_de_credito(
+        self, conversa, solicitacao_repo, cliente_repo
+    ):
+        self._encerrar(conversa)
+        limite_antes = cliente_repo.buscar_por_cpf(CPF_ANA).limite_atual
+
+        conversa.turno(
+            "quero aumentar meu limite para 9 mil",
+            chama("atender_credito"),
+            chama("solicitar_aumento", novo_limite=9000),
+            fala("aprovado!"),
+        )
+
+        assert solicitacao_repo.listar() == [], "nenhum pedido pode ser gravado após encerrar"
+        assert cliente_repo.buscar_por_cpf(CPF_ANA).limite_atual == limite_antes
+
+    def test_encerrado_responde_sem_chamar_o_llm(self, conversa):
+        self._encerrar(conversa)
+        antes = len(conversa.modelos)
+
+        conversa.turno("oi de novo?")
+
+        assert "encerrado" in conversa.ultima_fala.lower()
+        # O nó-sentinela é determinístico: não consome cota nem depende do provedor.
+        assert conversa.modelos[antes].chamadas == []
+
+    def test_encerramento_por_excesso_de_tentativas_tambem_barra(
+        self, conversa, solicitacao_repo
+    ):
+        for _ in range(MAX_TENTATIVAS_AUTH):
+            conversa.turno("tentativa", chama("autenticar_cliente", cpf=CPF_ANA,
+                                              data_nascimento="01/01/1900"), fala("não confere"))
+        assert conversa.estado["finished"] is True
+
+        conversa.turno("me dá um aumento", chama("atender_credito"),
+                       chama("solicitar_aumento", novo_limite=9000), fala("ok"))
+
+        assert solicitacao_repo.listar() == []

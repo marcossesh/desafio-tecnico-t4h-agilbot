@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
+from uuid import uuid4
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
@@ -106,7 +107,8 @@ def run_agent_turn(
     modelo_com_tools = modelo.bind_tools(tools) if tools else modelo
 
     prompt = f"{system_prompt}\n\n{render_contexto(state)}"
-    convo: list = [SystemMessage(content=prompt), *sanitizar_historico(state["messages"])]
+    historico = sanitizar_historico(state.get("messages") or [])
+    convo: list = [SystemMessage(content=prompt), *historico]
 
     novas_mensagens: list = []
     updates: dict = {"current_agent": agent_name}
@@ -130,18 +132,36 @@ def run_agent_turn(
             break
 
         for chamada in resposta.tool_calls:
-            handler = handlers.get(chamada["name"])
+            nome = chamada.get("name") or "desconhecida"
+            handler = handlers.get(nome)
             if handler is None:
                 conteudo, efeitos = (
-                    f"[interno] Ferramenta indisponível neste contexto: {chamada['name']}.",
+                    f"[interno] Ferramenta indisponível neste contexto: {nome}.",
                     {},
                 )
             else:
-                conteudo, efeitos = handler(chamada.get("args") or {}, {**state, **updates})
+                # Sem este try, qualquer exceção não prevista num handler derruba o turno
+                # inteiro e o cliente recebe só "instabilidade". O ponto de extensão mais
+                # provável do sistema é justamente escrever handlers novos.
+                try:
+                    conteudo, efeitos = handler(
+                        chamada.get("args") or {}, {**state, **updates}
+                    )
+                except Exception:
+                    logger.exception(
+                        "Handler %s falhou no agente %s", chamada.get("name"), agent_name
+                    )
+                    conteudo, efeitos = (
+                        "[interno] A operação não pôde ser concluída agora. Peça desculpas "
+                        "ao cliente e ofereça tentar novamente.",
+                        {},
+                    )
 
             convo.append(
                 ToolMessage(
-                    content=conteudo, tool_call_id=chamada["id"], name=chamada["name"]
+                    content=conteudo,
+                    tool_call_id=chamada.get("id") or f"call_{uuid4().hex[:8]}",
+                    name=chamada.get("name") or "desconhecida",
                 )
             )
             novas_mensagens.append(convo[-1])

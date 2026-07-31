@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from src.core.constants import HEADER_SOLICITACOES
+from src.core.constants import HEADER_CLIENTES, HEADER_SOLICITACOES
 from src.domain.enums import StatusPedido
 from src.domain.models import SolicitacaoAumento
 from src.repositories.base import CsvRepository, RepositoryError
@@ -180,3 +180,46 @@ class TestSolicitacaoRepository:
         idx = solicitacao_repo.registrar(pedido)
         with pytest.raises(RepositoryError, match="não é terminal"):
             solicitacao_repo.transicionar(idx, pedido)
+
+
+class TestLinhasAnomalas:
+    """Nenhuma linha isolada de CSV pode tirar os demais clientes do ar.
+
+    O teste antigo de linha corrompida usava exatamente 12 campos e por isso não
+    alcançava o caso que mais acontece na prática: uma vírgula sobrando.
+    """
+
+    @pytest.mark.parametrize(
+        ("rotulo", "linha"),
+        [
+            ("colunas a mais",
+             "11122233344,X,1990-01-01,,,,formal,0,0,0,ativa,2020-01-01,LIXO,EXTRA"),
+            ("colunas a menos", "11122233344,X,1990-01-01,,,,formal"),
+            ("emprego desconhecido",
+             "11122233344,X,1990-01-01,,,,aposentado,0,0,0,ativa,2020-01-01"),
+            ("data inválida",
+             "11122233344,X,nao-e-data,,,,formal,0,0,0,ativa,2020-01-01"),
+            ("linha vazia", ",,,,,,,,,,,"),
+        ],
+    )
+    def test_linha_anomala_nunca_derruba_listar(self, data_dir: Path, rotulo, linha):
+        caminho = data_dir / "clientes.csv"
+        with caminho.open("a", encoding="utf-8") as f:
+            f.write(linha + "\n")
+
+        clientes = ClienteRepository(caminho).listar()
+
+        assert len(clientes) >= 5, f"{rotulo}: os 5 clientes válidos precisam sobreviver"
+
+    def test_coluna_excedente_nao_e_regravada(self, data_dir: Path):
+        """A chave de excedente não pode vazar para o arquivo numa atualização."""
+        caminho = data_dir / "clientes.csv"
+        with caminho.open("a", encoding="utf-8") as f:
+            f.write("11122233344,X,1990-01-01,,,,formal,0,0,0,ativa,2020-01-01,EXTRA\n")
+
+        repo = ClienteRepository(caminho)
+        repo.atualizar_score(CPF_ANA, 600)
+
+        with caminho.open(encoding="utf-8") as f:
+            colunas = {len(linha.rstrip("\n").split(",")) for linha in f if linha.strip()}
+        assert colunas == {len(HEADER_CLIENTES)}

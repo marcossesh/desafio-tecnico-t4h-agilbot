@@ -48,7 +48,19 @@ class CreditoService:
             taxa_juros_mensal=faixa.taxa_juros_mensal,
         )
 
+    def _cliente_atual(self, cliente: Cliente) -> Cliente:
+        """Relê o cliente do disco antes de decidir.
+
+        O `cliente` que chega é o snapshot congelado no estado do grafo desde a
+        autenticação. Avaliar contra ele aprova pedidos sobre um limite que já mudou.
+        """
+        try:
+            return self.clientes.buscar_por_cpf(cliente.cpf) or cliente
+        except RepositoryError:
+            return cliente
+
     def solicitar_aumento(self, cliente: Cliente, novo_limite: float) -> ResultadoAumento:
+        cliente = self._cliente_atual(cliente)
         if novo_limite <= cliente.limite_atual:
             return ResultadoAumento(
                 status=StatusPedido.INVALIDO,
@@ -121,9 +133,22 @@ class CreditoService:
         )
 
     def _persistir_novo_limite(self, cliente: Cliente, novo_limite: float) -> Cliente:
-        """Aprovação atualiza o limite. Falhar aqui não invalida o pedido já registrado."""
+        """Grava o novo limite só se o valor em disco ainda for o que foi avaliado.
+
+        Falhar aqui não invalida o pedido já registrado. Se outra aprovação escreveu
+        primeiro, o `compare-and-set` recusa a sobrescrita e o limite vigente prevalece —
+        é preferível não aplicar um aumento a apagar outro silenciosamente.
+        """
         try:
-            self.clientes.atualizar_limite(cliente.cpf, novo_limite)
+            aplicado = self.clientes.atualizar_limite_se(
+                cliente.cpf, cliente.limite_atual, novo_limite
+            )
+            if not aplicado:
+                logger.warning(
+                    "Limite de %s mudou durante a avaliação; aumento para %.2f não aplicado.",
+                    cliente.cpf, novo_limite,
+                )
+                return self._cliente_atual(cliente)
         except RepositoryError as exc:
             logger.error("Aumento aprovado mas não persistido para %s: %s", cliente.cpf, exc)
             return cliente

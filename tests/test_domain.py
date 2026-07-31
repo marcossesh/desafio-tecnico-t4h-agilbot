@@ -9,6 +9,7 @@ from src.core.utils import (
     formatar_cpf,
     formatar_percentual,
     normalizar,
+    parse_valor_monetario,
     texto_da_mensagem,
 )
 from src.domain.enums import StatusPedido, TipoEmprego, texto_para_booleano
@@ -188,3 +189,35 @@ class TestModelos:
         assert StatusPedido.APROVADO.e_terminal
         assert StatusPedido.REJEITADO.e_terminal
         assert not StatusPedido.PENDENTE.e_terminal
+
+
+class TestValoresHostis:
+    """Entradas que o `float()` aceita e o resto do sistema não sobrevive."""
+
+    @pytest.mark.parametrize("v", ["inf", "-inf", "Infinity", "1e999", "-1e999"])
+    def test_valor_nao_finito_e_rejeitado(self, v):
+        """Um infinito passa pelo `ge=0` do modelo e só estoura no `int()` do score."""
+        with pytest.raises(ValueError):
+            parse_valor_monetario(v)
+
+    def test_valor_implausivel_e_rejeitado(self):
+        with pytest.raises(ValueError):
+            parse_valor_monetario("1e12")
+
+    @pytest.mark.parametrize("v", ["inf", "1e999"])
+    def test_entrevista_com_valor_nao_finito_nao_estoura(self, v):
+        """O erro precisa voltar como campo inválido, não como exceção até o grafo."""
+        with pytest.raises(ValidationError):
+            DadosEntrevista(
+                renda_mensal=v, tipo_emprego="formal", despesas_fixas=0,
+                num_dependentes=0, tem_dividas=False,
+            )
+
+    def test_score_nunca_estoura_para_valores_validos(self):
+        from src.services.scoring import calcular_score
+
+        dados = DadosEntrevista(
+            renda_mensal="999999999", tipo_emprego="formal", despesas_fixas=0,
+            num_dependentes=0, tem_dividas=False,
+        )
+        assert calcular_score(dados) == 1000

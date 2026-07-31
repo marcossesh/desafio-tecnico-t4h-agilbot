@@ -210,3 +210,52 @@ class TestGuardaDeVazamento:
         updates, _ = run_agent_turn(estado(), "triagem", "P", [], {})
 
         assert updates["vazamento_detectado"] is False
+
+
+class TestHandlerHostil:
+    """O ponto de extensão mais provável do sistema é escrever handlers novos."""
+
+    def test_handler_que_levanta_nao_derruba_o_turno(self, modelo):
+        modelo(chama("boom"), fala("Desculpe, não consegui concluir agora."))
+
+        def boom(_a, _s):
+            raise RuntimeError("falha inesperada")
+
+        updates, destino = run_agent_turn(estado(), "credito", "P", [], {"boom": boom})
+
+        assert destino is None
+        assert any(
+            isinstance(m, AIMessage) and m.content for m in updates["messages"]
+        ), "o cliente precisa receber alguma resposta"
+
+    def test_falha_de_handler_vira_texto_interno_para_o_modelo(self, modelo):
+        modelo(chama("boom"), fala("ok"))
+
+        def boom(_a, _s):
+            raise ValueError("x")
+
+        updates, _ = run_agent_turn(estado(), "credito", "P", [], {"boom": boom})
+
+        internos = [
+            str(m.content) for m in updates["messages"] if isinstance(m, ToolMessage)
+        ]
+        assert any("não pôde ser concluída" in t for t in internos)
+
+    def test_tool_call_sem_id_e_tolerado(self, modelo):
+        modelo(
+            AIMessage(content="", tool_calls=[{"name": "ok", "args": {}, "id": None}]),
+            fala("pronto"),
+        )
+        handlers = {"ok": lambda _a, _s: ("[interno] feito", {})}
+
+        updates, _ = run_agent_turn(estado(), "credito", "P", [], handlers)
+
+        assert any(isinstance(m, ToolMessage) for m in updates["messages"])
+
+    def test_estado_sem_messages_nao_levanta(self, modelo):
+        modelo(fala("olá"))
+        sem_messages = {k: v for k, v in estado().items() if k != "messages"}
+
+        updates, _ = run_agent_turn(sem_messages, "triagem", "P", [], {})
+
+        assert updates["messages"]

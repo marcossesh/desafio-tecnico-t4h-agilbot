@@ -88,10 +88,11 @@ infra/           Dockerfile, docker-compose, init do pgvector
 
 ### O grafo
 
-Um nó por agente e uma **entrada condicional** que retoma sempre o `current_agent`. As
-arestas não são escritas à mão: cada nó devolve `Command(goto=...)` e a anotação de
-retorno `Command[Literal[...]]` declara os destinos, de onde o LangGraph infere o grafo
-— este diagrama é gerado por `build_graph().get_graph().draw_mermaid()`.
+Um nó por agente e uma **entrada condicional** que retoma sempre o `current_agent` — ou
+desvia para o nó `encerrado` quando o atendimento já terminou. As arestas entre agentes
+não são escritas à mão: cada nó devolve `Command(goto=...)` e a anotação de retorno
+`Command[Literal[...]]` declara os destinos, de onde o LangGraph infere o grafo. Este
+diagrama é gerado por `build_graph().get_graph().draw_mermaid()`.
 
 ```mermaid
 graph TD;
@@ -100,11 +101,13 @@ graph TD;
 	credito(credito)
 	entrevista(entrevista)
 	cambio(cambio)
+	encerrado(encerrado)
 	__end__([__end__]):::last
 	__start__ -.-> triagem;
 	__start__ -.-> credito;
 	__start__ -.-> entrevista;
 	__start__ -.-> cambio;
+	__start__ -.-> encerrado;
 	triagem -.-> credito;
 	triagem -.-> cambio;
 	triagem -.-> __end__;
@@ -114,9 +117,15 @@ graph TD;
 	entrevista -.-> credito;
 	cambio -.-> credito;
 	cambio -.-> __end__;
+	encerrado --> __end__;
 	classDef first fill-opacity:0
 	classDef last fill:#bfb6fc
 ```
+
+O nó **`encerrado`** é a barreira de encerramento no domínio: ele responde sem chamar o
+LLM e vai direto para `END`. Sem ele, `finished` seria apenas o `disabled` do campo de
+chat, e qualquer caminho fora da UI — refresh, outra aba, sessão retomada do Postgres —
+executaria operações normalmente sobre um atendimento já encerrado.
 
 ### O ciclo de um turno
 
@@ -187,13 +196,33 @@ Gravar a trilha nunca invalida a operação que ela documenta: uma falha ao escr
 histórico vira `warning` no log e o score permanece atualizado.
 
 **Escrita.** Todo CSV é reescrito de forma atômica (arquivo temporário no mesmo
-diretório + `fsync` + `os.replace`), preservando a permissão original. O
-`threading.Lock` serializa escritas **dentro do processo**, o que basta para a UI
-Streamlit, que roda em processo único — não é um lock entre processos.
+diretório + `fsync` + `os.replace`), preservando a permissão original.
+
+A serialização entre threads depende de duas condições que são fáceis de perder de vista,
+e por isso estão fixadas em teste (`tests/test_concorrencia.py`):
+
+1. **Um repositório por arquivo.** O `threading.Lock` vive no objeto. Instanciar um
+   `ClienteRepository` por serviço criaria três locks para o mesmo `clientes.csv`, que não
+   serializam nada entre si — o container compartilha uma única instância.
+2. **O ciclo read-modify-write inteiro sob o lock.** Ler fora e escrever dentro deixa a
+   janela em que duas threads leem o mesmo estado e a segunda apaga a primeira. Toda
+   alteração passa por `CsvRepository.mutate()`; ninguém usa `read_dicts` + `write_dicts`
+   para mutar.
+
+Aprovações de aumento usam ainda um **compare-and-set**: o novo limite só é gravado se o
+valor em disco continuar sendo o que foi avaliado. Se outra operação escreveu no meio, a
+gravação é recusada e registrada, em vez de sobrescrever cegamente.
+
+**Limitação declarada:** isso é sincronização **intraprocesso**. Basta para a UI Streamlit,
+que roda em processo único, e não cobre múltiplos workers ou containers gravando no mesmo
+volume — nesse cenário, a persistência precisaria sair do CSV para um banco relacional.
 
 ### Degradação controlada
 
-Nenhuma falha isolada derruba a conversa.
+As falhas previsíveis são contidas na camada onde ocorrem e viram mensagem ao cliente, não
+exceção. Isso vale para os caminhos abaixo e para o ponto mais provável de regressão — uma
+exceção inesperada dentro de um handler de ferramenta é capturada pelo motor de turno, que
+segue com uma resposta coerente e registra o erro no log.
 
 | Componente | Situação | Comportamento |
 | --- | --- | --- |
@@ -228,7 +257,9 @@ Nenhuma falha isolada derruba a conversa.
   como `Literal` no schema da ferramenta.
 - **Base de conhecimento (RAG)** sobre políticas, tarifas, câmbio e segurança/LGPD.
 - **Handoffs invisíveis**, com guarda de vazamento em runtime e no CI.
-- **Encerramento por ferramenta** a qualquer momento.
+- **Encerramento por ferramenta** a qualquer momento, com barreira **no grafo**: uma
+  mensagem que chegue depois do encerramento é respondida por um nó determinístico e
+  não executa operação nenhuma — a garantia não depende do widget da UI.
 - **Logs correlacionados por sessão**, para investigar um atendimento específico.
 
 ---
@@ -349,13 +380,40 @@ aplicação simplesmente travava ao subir.
 **Solução:** `timeout` no pool e `connect_timeout` na conexão. O provider falha em 5
 segundos e cai para memória, como projetado.
 
-### 10. Inconsistência do enunciado (`rejeitado` × `reprovado`)
+### 12. Escrita concorrente: o lock estava lá, a serialização não
+
+Um passe adversarial mostrou que `clientes.csv` perdia atualizações em **30 de 30**
+execuções com duas threads. O `threading.Lock` existia e estava correto — o que faltava
+eram as duas condições para ele valer: o container criava um `ClienteRepository` por
+serviço (três locks para o mesmo arquivo) e o `read-modify-write` lia fora do lock.
+
+**Solução:** uma instância compartilhada no container, `CsvRepository.mutate()` com o
+ciclo inteiro sob o lock, e **compare-and-set** na gravação do limite aprovado. Depois
+disso, 0 de 30. Coberto por `tests/test_concorrencia.py` — a classe de cenário que
+cobertura de linha não alcança, porque o defeito está no interleaving, não numa linha
+não executada.
+
+### 13. Três formas de derrubar a conversa que a suíte não via
+
+Um valor de renda `inf` passava pelo `Field(ge=0)` (`inf >= 0` é verdadeiro) e estourava
+em `OverflowError` no `int()` do score; uma vírgula sobrando em `clientes.csv` fazia o
+`DictReader` criar a chave `None` e `Cliente(**linha)` levantar `TypeError`, derrubando a
+autenticação de **todos**; e qualquer exceção não prevista dentro de um handler subia até
+o grafo.
+
+Os três tinham a mesma forma: exceção de um tipo que o `except` da camada não previa.
+**Solução:** rejeitar não-finitos na fronteira (`parse_valor_monetario`), nomear o
+`restkey` do `DictReader` para que o excedente nunca vire a chave `None`, ampliar os
+`except` para o que de fato pode ocorrer, e envolver a chamada de handler no motor de
+turno — o ponto de extensão mais provável do sistema.
+
+### 14. Inconsistência do enunciado (`rejeitado` × `reprovado`)
 
 O enunciado define a coluna com `rejeitado` e, mais adiante, fala em `reprovado` para o
 mesmo estado. Padronizado no enum `StatusPedido`, usando o termo da definição das
 colunas.
 
-### 11. Dois drivers para o mesmo Postgres
+### 15. Dois drivers para o mesmo Postgres
 
 O checkpointer do LangGraph fala **psycopg** (`postgresql://`) e o `PGEngine` do pgvector
 é SQLAlchemy async, exigindo `postgresql+asyncpg://`. Manter duas variáveis de ambiente
@@ -561,6 +619,8 @@ grep Diego app/data/clientes.csv               # score 505 e limite 10000
 | Nenhum agente fora do escopo | ferramentas por agente; RAG fora da triagem | `test_conhecimento.py::TestFerramentaCondicional` |
 | Redirecionamentos implícitos | `agents/base.py` (handoff silencia a origem) | `test_motor.py::TestHandoff`, `test_graph.py::test_cliente_nunca_ve_mencao_a_transferencia` |
 | Uso de ferramentas para CSV, API e cálculo | `repositories/`, `services/` | suíte inteira |
-| Tratamento de erros e exceções | `RepositoryError`, matriz de degradação | `test_motor.py::TestRedesDeSeguranca`, `test_ui.py::TestErros` |
+| Tratamento de erros e exceções | `RepositoryError`, matriz de degradação | `test_motor.py::TestRedesDeSeguranca`, `TestHandlerHostil`, `test_ui.py::TestErros` |
+| Integridade sob escrita concorrente | `CsvRepository.mutate`, `atualizar_limite_se` | `test_concorrencia.py` |
+| Encerramento efetivo do atendimento | `orchestration/graph.py` (nó `encerrado`) | `test_graph.py::TestCicloDeVida` |
 | Registro de erro para análise posterior | `core/logging.py` (correlação por sessão) | — |
 | UI simples para testes | `app/ui/` | `test_ui.py` |

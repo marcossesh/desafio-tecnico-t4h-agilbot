@@ -1,8 +1,11 @@
 """Utilidades transversais: normalização de texto, formatação e marcação interna."""
 from __future__ import annotations
 
+import math
 import re
 import unicodedata
+
+TETO_VALOR_MONETARIO = 1_000_000_000.0
 
 _MARCADOR_INTERNO = "[interno]"
 
@@ -72,9 +75,18 @@ def parse_valor_monetario(valor: str | float | int) -> float:
         texto = texto.replace(".", "")
 
     try:
-        return float(texto) * multiplicador
+        resultado = float(texto) * multiplicador
     except ValueError as exc:
         raise ValueError(f"valor monetário inválido: {valor!r}") from exc
+
+    # `float()` aceita "inf", "-inf" e "1e999". Um infinito passa pelo `ge=0` do modelo
+    # (inf >= 0 é verdadeiro) e só estoura lá na frente, no `int()` do cálculo de score.
+    # Barrar aqui, na fronteira, mantém o erro como mensagem de campo ao invés de exceção.
+    if not math.isfinite(resultado):
+        raise ValueError(f"valor monetário fora de faixa: {valor!r}")
+    if abs(resultado) > TETO_VALOR_MONETARIO:
+        raise ValueError(f"valor monetário implausível: {valor!r}")
+    return resultado
 
 
 def texto_da_mensagem(content: object) -> str:

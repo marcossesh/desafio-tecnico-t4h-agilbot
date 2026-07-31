@@ -6,6 +6,7 @@ import os
 import tempfile
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 from src.core.logging import get_logger
@@ -14,6 +15,8 @@ logger = get_logger(__name__)
 
 _TENTATIVAS_REPLACE = 3
 _ESPERA_RETRY = 0.1
+
+COLUNA_EXCEDENTE = "_excedente"
 
 
 class RepositoryError(Exception):
@@ -32,7 +35,12 @@ class CsvRepository:
     def read_dicts(self) -> list[dict[str, str]]:
         try:
             with self.path.open(newline="", encoding="utf-8") as f:
-                return list(csv.DictReader(f))
+                # `restkey` nomeado é essencial: sem ele, uma linha com colunas a mais
+                # (vírgula sobrando, export de planilha) põe o excedente sob a chave
+                # `None`, e `Modelo(**linha)` levanta `TypeError: keywords must be
+                # strings` — que não é ValidationError e escapa de quem só trata dado
+                # inválido. `restval` cobre a linha curta pelo mesmo motivo.
+                return list(csv.DictReader(f, restkey=COLUNA_EXCEDENTE, restval=""))
         except FileNotFoundError as exc:
             raise RepositoryError(f"Arquivo não encontrado: {self.path.name}") from exc
         except (OSError, csv.Error, UnicodeDecodeError) as exc:
@@ -65,6 +73,17 @@ class CsvRepository:
             self._escrever_atomico(linhas, self.header)
 
 
+    def mutate(self, transformar: Callable[[list[dict]], list[dict]]) -> None:
+        """Ciclo read-modify-write inteiro sob o lock.
+
+        Ler fora do lock e escrever dentro dele não serializa nada: duas threads leem o
+        mesmo estado e a segunda escrita sobrescreve a primeira. Quem precisa alterar o
+        arquivo deve passar por aqui, nunca por `read_dicts` + `write_dicts`.
+        """
+        with self._lock:
+            linhas = self._ler_sem_lock()
+            self._escrever_atomico(transformar(linhas), self.header)
+
     def _ler_sem_lock(self) -> list[dict[str, str]]:
         if not self.path.exists():
             return []
@@ -86,7 +105,9 @@ class CsvRepository:
             )
             try:
                 with os.fdopen(fd, "w", newline="", encoding="utf-8") as f:
-                    writer = csv.DictWriter(f, fieldnames=fieldnames)
+                    # `extrasaction="ignore"`: linhas lidas de um CSV malformado carregam
+                    # a chave de excedente, e ela não deve ser regravada nem quebrar a escrita.
+                    writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
                     writer.writeheader()
                     writer.writerows(rows)
                     f.flush()

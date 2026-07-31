@@ -50,17 +50,19 @@ class EntrevistaService:
 
     def registrar(self, cliente: Cliente, **respostas: object) -> ResultadoEntrevista:
         """Valida as respostas, recalcula o score e grava em `clientes.csv`."""
+        # `ArithmeticError` cobre o `OverflowError` de um valor não-finito que escape da
+        # validação; o cálculo fica dentro do try porque um erro dele é erro de dado do
+        # cliente, e precisa voltar como mensagem — não como exceção que sobe até o grafo.
         try:
             dados = DadosEntrevista(**respostas)
-        except (ValidationError, ValueError) as exc:
+            novo_score = calcular_score(dados)
+        except (ValidationError, ValueError, ArithmeticError, TypeError) as exc:
             mensagem = (
                 _mensagem_de_erro(exc) if isinstance(exc, ValidationError) else str(exc)
             )
             return ResultadoEntrevista(
                 ok=False, mensagem=f"Dados inválidos na entrevista — {mensagem}"
             )
-
-        novo_score = calcular_score(dados)
 
         try:
             self.clientes.atualizar_score(cliente.cpf, novo_score)

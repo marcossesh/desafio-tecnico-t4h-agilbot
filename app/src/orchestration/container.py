@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import lru_cache
 
+from src.repositories.clientes import ClienteRepository
 from src.services.auth_service import AuthService
 from src.services.cambio_service import CambioService
 from src.services.credito_service import CreditoService
@@ -27,10 +28,17 @@ _override: Services | None = None
 
 @lru_cache(maxsize=1)
 def _services_padrao() -> Services:
+    """Um repositório por arquivo, compartilhado entre os serviços.
+
+    Instanciar `AuthService()`, `CreditoService()` e `EntrevistaService()` sem argumentos
+    criaria três `ClienteRepository` sobre o mesmo `clientes.csv` — e portanto três locks
+    que não serializam nada entre si. O lock só protege se houver um objeto por arquivo.
+    """
+    clientes = ClienteRepository()
     return Services(
-        auth=AuthService(),
-        credito=CreditoService(),
-        entrevista=EntrevistaService(),
+        auth=AuthService(clientes),
+        credito=CreditoService(cliente_repo=clientes),
+        entrevista=EntrevistaService(cliente_repo=clientes),
         cambio=CambioService(),
         knowledge=KnowledgeService(),
     )

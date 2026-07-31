@@ -54,6 +54,11 @@ MOEDA_PADRAO: Final[str] = "USD"
 MOEDA_DESTINO: Final[str] = "BRL"
 TIMEOUT_HTTP: Final[int] = 10
 
+MSG_ATENDIMENTO_ENCERRADO: Final[str] = (
+    "Este atendimento já foi encerrado. Para uma nova solicitação, inicie um novo "
+    "atendimento — será um prazer ajudar."
+)
+
 MSG_INSTABILIDADE: Final[str] = (
     "Estou com uma instabilidade no sistema neste momento. Pode tentar novamente "
     "em alguns instantes?"
