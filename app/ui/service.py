@@ -8,11 +8,10 @@ from langgraph.errors import GraphRecursionError
 
 from src.core.constants import MSG_INSTABILIDADE, RECURSION_LIMIT
 from src.core.logging import get_logger, set_thread_id
-from src.core.utils import texto_da_mensagem
+from src.core.utils import formatar_brl, texto_da_mensagem
 from src.orchestration.graph import compile_graph
 from src.orchestration.state import estado_inicial
 from src.providers.checkpointer import criar_checkpointer
-from src.providers.llm import provider_ativo
 
 logger = get_logger(__name__)
 
@@ -31,7 +30,6 @@ class Atendimento:
         checkpointer, descricao = criar_checkpointer()
         self.grafo = compile_graph(checkpointer)
         self.persistencia = descricao
-        self.provider = provider_ativo()
 
     def responder(self, session_id: str, mensagem: str) -> Resposta:
         set_thread_id(session_id)
@@ -83,21 +81,27 @@ class Atendimento:
         return delta if iniciada else {**estado_inicial(), **delta}
 
     def _debug(self, estado: dict) -> dict:
+        """Só o que se lê de relance durante uma demonstração.
+
+        `agente atual` é o campo que prova o requisito mais difícil do enunciado: ele
+        percorre os quatro agentes enquanto o cliente conversa com um só atendente.
+        """
         cliente = estado.get("cliente") or {}
         return {
             "agente atual": estado.get("current_agent", "-"),
-            "autenticado": bool(estado.get("authenticated")),
-            "cliente": cliente.get("nome", "-"),
-            "score": cliente.get("score", "-"),
-            "limite": cliente.get("limite_atual", "-"),
+            "cliente": _resumo_do_cliente(cliente),
             "tentativas de autenticação": estado.get("auth_attempts", 0),
-            "último pedido": (estado.get("ultima_solicitacao") or {}).get("status", "-"),
             "modelo do turno": estado.get("llm_provider") or "-",
-            "provider configurado": self.provider,
-            "sessões": self.persistencia,
             "vazamento detectado": bool(estado.get("vazamento_detectado")),
             "números sem procedência": estado.get("numeros_inventados") or "-",
         }
+
+
+def _resumo_do_cliente(cliente: dict) -> str:
+    if not cliente:
+        return "não autenticado"
+    limite = formatar_brl(float(cliente.get("limite_atual") or 0))
+    return f"{cliente.get('nome', '-')} · score {cliente.get('score', '-')} · {limite}"
 
 
 def _ultima_fala(estado: dict, desde: int = 0) -> str:

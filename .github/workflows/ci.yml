@@ -20,7 +20,7 @@ jobs:
         run: uv sync --frozen
 
       - name: Lint (ruff)
-        run: uv run ruff check app tests scripts
+        run: uv run ruff check app tests
 
       # A suíte inteira roda com um LLM falso e a API de câmbio mockada: nenhuma chave
       # de API é necessária no CI, e nenhum teste depende da rede.

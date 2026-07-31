@@ -1,4 +1,4 @@
-.PHONY: help install run test lint spike ingest docker docker-down
+.PHONY: help install run test lint ingest docker docker-down
 
 export PYTHONPATH := app
 
@@ -7,7 +7,6 @@ help:
 	@echo "run          sobe a UI Streamlit em http://localhost:8501"
 	@echo "test         roda a suíte com cobertura"
 	@echo "lint         roda o ruff"
-	@echo "spike        conversa com o grafo no terminal (precisa de chave de LLM)"
 	@echo "ingest       indexa a base de conhecimento no pgvector"
 	@echo "docker       sobe postgres + app via docker compose"
 	@echo "docker-down  derruba os containers"
@@ -23,10 +22,7 @@ test:
 	uv run pytest
 
 lint:
-	uv run ruff check app tests scripts
-
-spike:
-	uv run python scripts/spike.py
+	uv run ruff check app tests
 
 ingest:
 	uv run python -m src.rag.ingest

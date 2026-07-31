@@ -49,18 +49,6 @@ def _groq() -> BaseChatModel | None:
     )
 
 
-def provider_ativo() -> str:
-    """Nome do provedor primário, para exibir no sidebar de debug."""
-    settings = get_settings()
-    if settings.tem_gemini:
-        return f"gemini:{settings.gemini_model}" + (
-            f" (fallback groq:{settings.groq_model})" if settings.tem_groq else ""
-        )
-    if settings.tem_groq:
-        return f"groq:{settings.groq_model}"
-    return "nenhum"
-
-
 @lru_cache(maxsize=1)
 def get_chat_model() -> BaseChatModel:
     """Modelo de chat com fallback encadeado. Cacheado: um por processo."""
