@@ -5,8 +5,12 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from src.core.constants import SCORE_MAXIMO, SCORE_MINIMO
+from src.core.logging import get_logger
 from src.core.utils import apenas_digitos, formatar_cpf, parse_valor_monetario
 from src.domain.enums import StatusConta, StatusPedido, TipoEmprego, texto_para_booleano
+
+logger = get_logger(__name__)
 
 
 class Cliente(BaseModel):
@@ -35,12 +39,59 @@ class Cliente(BaseModel):
     @field_validator("tipo_emprego", mode="before")
     @classmethod
     def _emprego(cls, v: str) -> str | TipoEmprego:
-        return TipoEmprego.from_texto(v) if isinstance(v, str) else v
+        """Cadastro com emprego irreconhecível não pode apagar a identidade do cliente.
+
+        Se este validador levantasse, o Pydantic embrulharia em `ValidationError`, o
+        repositório descartaria a linha inteira, e autenticar devolveria "não encontrei
+        um cadastro com esse CPF" — reportando dado inválido como cliente inexistente.
+        O campo só pesa no score da entrevista, então o default com aviso é o correto.
+        """
+        if not isinstance(v, str):
+            return v
+        try:
+            return TipoEmprego.from_texto(v)
+        except ValueError:
+            logger.warning("tipo_emprego %r não reconhecido; assumindo FORMAL", v)
+            return TipoEmprego.FORMAL
 
     @field_validator("status_conta", mode="before")
     @classmethod
     def _status(cls, v: str) -> str | StatusConta:
         return StatusConta.from_texto(v) if isinstance(v, str) else v
+
+    @field_validator("score", mode="before")
+    @classmethod
+    def _score_na_escala(cls, v: object) -> int:
+        """Ajusta o score ao intervalo em vez de invalidar a linha.
+
+        `Field(ge=…, le=…)` seria o reflexo — e o errado: um score 1500 (digitação ou
+        escala FICO) viraria `ValidationError` e o cliente sumiria da base. Trocaria um
+        cliente sem crédito por um cliente sem cadastro.
+        """
+        try:
+            score = int(float(v or 0))
+        except (TypeError, ValueError):
+            logger.warning("score %r ilegível; assumindo %d", v, SCORE_MINIMO)
+            return SCORE_MINIMO
+        if not SCORE_MINIMO <= score <= SCORE_MAXIMO:
+            logger.warning(
+                "score %s fora de [%d, %d]; ajustado ao limite da escala",
+                score, SCORE_MINIMO, SCORE_MAXIMO,
+            )
+            return min(max(score, SCORE_MINIMO), SCORE_MAXIMO)
+        return score
+
+    @field_validator("limite_atual", "renda_declarada", mode="before")
+    @classmethod
+    def _valor_nao_negativo(cls, v: object) -> float:
+        try:
+            valor = float(v or 0)
+        except (TypeError, ValueError):
+            return 0.0
+        if valor < 0:
+            logger.warning("valor monetário negativo no cadastro (%s); assumindo 0", v)
+            return 0.0
+        return valor
 
     @property
     def primeiro_nome(self) -> str:
