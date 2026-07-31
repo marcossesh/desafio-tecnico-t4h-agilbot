@@ -253,6 +253,14 @@ segue com uma resposta coerente e registra o erro no log.
 - **Valores como o cliente fala**: `4200`, `R$ 4.200`, `4.200,50`, `10 mil`, `10k`,
   `1,5 milhão`. A conversão é determinística, no código — inclusive no pedido de aumento,
   onde o handler reinterpreta o valor em vez de confiar que o modelo converteu certo.
+- **Vocabulário real do cliente**: `aposentado`, `pensionista`, `servidor público` e
+  `faço bicos` mapeiam para as três categorias do enunciado; `estou sem dívidas`, `zero`
+  e `nunca tive` são entendidos como negativa.
+- **Cadastro tolerante**: um campo secundário malformado gera aviso e default, nunca faz
+  o cliente desaparecer da base.
+- **Autenticação sem oráculo**: falha de credencial tem mensagem única (o motivo fica no
+  log), o status da conta só é revelado após a data conferir, e há limite por CPF com
+  janela de tempo além das 3 tentativas por conversa.
 - **Cotação de 10 moedas** (USD, EUR, GBP, ARS, JPY, CHF, CAD, AUD, CNY, BTC), declaradas
   como `Literal` no schema da ferramenta.
 - **Base de conhecimento (RAG)** sobre políticas, tarifas, câmbio e segurança/LGPD.
@@ -413,7 +421,61 @@ O enunciado define a coluna com `rejeitado` e, mais adiante, fala em `reprovado`
 mesmo estado. Padronizado no enum `StatusPedido`, usando o termo da definição das
 colunas.
 
-### 15. Dois drivers para o mesmo Postgres
+### 14. Entrada do cliente: rejeitar não é tratar
+
+Um passe adversarial mostrou um padrão comum a seis defeitos: o sistema recusava entradas
+legítimas em vez de interpretá-las, e a recusa acontecia no pior lugar — no meio da
+entrevista, onde o prompt manda repreguntar só aquele campo, e o cliente repete a mesma
+formulação.
+
+`TipoEmprego` não reconhecia "aposentado", "pensionista" nem "sou empregado"; `tem_dividas`
+não entendia "estou sem dívidas", "zero" ou "nunca tive"; e `parse_data` devolvia **2010**
+para "14 de maio de 1990 às 10h" — data errada e plausível, que consumia uma tentativa de
+autenticação sem o cliente entender por quê.
+
+**Solução:** vocabulário ampliado a partir de como o cliente fala, ano exigido com 4
+dígitos no ramo textual, e um filtro de intervalo `[1900, hoje]` que elimina de uma vez
+datas futuras e o pivô arbitrário de anos com dois dígitos. Aposentadoria e pensão foram
+mapeadas para `formal` — decisão de produto, registrada no código.
+
+### 15. Dado ruim no cadastro apagava o cliente
+
+Uma linha de `clientes.csv` com `tipo_emprego=aposentado` fazia o cliente **deixar de
+existir**: o validador levantava, o repositório descartava a linha e a autenticação
+respondia "não encontrei um cadastro com esse CPF". Dado inválido reportado como dado
+inexistente — e o mesmo valia para score fora da escala.
+
+**Solução:** campos secundários passaram a normalizar com aviso em vez de invalidar. A
+tentação era `Field(ge=…, le=…)` no score, e seria o remédio errado: trocaria um cliente
+sem crédito por um cliente sem cadastro. Também separei "política ilegível" de "score fora
+de todas as faixas", que antes davam a mesma mensagem e mandavam quem investiga para o
+arquivo errado.
+
+### 16. O atendimento era um oráculo de enumeração
+
+"Não encontrei um cadastro com esse CPF" e "a data de nascimento não confere" são
+mensagens distintas — e juntas permitem descobrir quem é cliente do banco variando o CPF.
+Pior: o limite de 3 tentativas vivia no estado da conversa, e "Novo atendimento" zerava o
+contador.
+
+**Solução:** mensagem única para falha de credencial, com o motivo exato apenas no log; o
+status da conta só é revelado **depois** de a data conferir; e um contador por CPF com
+janela deslizante, que é a dimensão que o cliente não controla. O CPF também deixou de
+aparecer em claro nos logs, que são persistidos em `app/logs/` e montados no host.
+
+### 17. Dois artefatos corretos, incompatíveis juntos
+
+A guarda de vazamento proibia a palavra "transferência" — e `tarifas.md` tem uma seção
+`## Transferências` com o TED a R$ 8,50. O prompt empurrava o modelo a evitar o termo certo
+ao responder sobre tarifas, e o painel de diagnóstico acusava vazamento em resposta
+perfeitamente legítima.
+
+**Solução:** o padrão passou a ser contextual — o vazamento é sobre transferir *o
+atendimento*, não sobre movimentar dinheiro. Há um teste que confronta o detector com o
+corpus RAG inteiro; é o tipo de verificação que só aparece quando se olha dois artefatos
+juntos.
+
+### 18. Dois drivers para o mesmo Postgres
 
 O checkpointer do LangGraph fala **psycopg** (`postgresql://`) e o `PGEngine` do pgvector
 é SQLAlchemy async, exigindo `postgresql+asyncpg://`. Manter duas variáveis de ambiente
