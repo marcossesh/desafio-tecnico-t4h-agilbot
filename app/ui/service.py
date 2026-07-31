@@ -40,6 +40,10 @@ class Atendimento:
             "recursion_limit": RECURSION_LIMIT,
         }
         entrada = self._entrada(config, mensagem)
+        # Fronteira do turno: a resposta precisa vir das mensagens produzidas AGORA.
+        # Varrer o histórico acumulado devolveria a fala do turno anterior quando este
+        # não produz texto — resultado errado com aparência de resposta normal.
+        ja_ditas = self._quantidade_de_mensagens(config)
 
         try:
             estado = self.grafo.invoke(entrada, config=config)
@@ -56,10 +60,17 @@ class Atendimento:
             return Resposta(texto=MSG_INSTABILIDADE, debug={"erro": str(exc)})
 
         return Resposta(
-            texto=_ultima_fala(estado),
+            texto=_ultima_fala(estado, desde=ja_ditas),
             debug=self._debug(estado),
             finished=bool(estado.get("finished")),
         )
+
+    def _quantidade_de_mensagens(self, config: dict) -> int:
+        try:
+            snapshot = self.grafo.get_state(config)
+        except Exception:
+            return 0
+        return len((snapshot.values or {}).get("messages", [])) if snapshot else 0
 
     def _entrada(self, config: dict, mensagem: str) -> dict:
         """Estado inicial completo no primeiro turno; depois, só o delta."""
@@ -88,12 +99,29 @@ class Atendimento:
         }
 
 
-def _ultima_fala(estado: dict) -> str:
+def _ultima_fala(estado: dict, desde: int = 0) -> str:
+    """Última fala do atendente **entre as mensagens deste turno**.
+
+    Sem o corte em `desde`, um turno que não produz texto devolveria a resposta anterior:
+    o cliente pergunta "e a taxa?" e recebe de volta "seu limite é R$ 5.000,00".
+    """
+    novas = estado.get("messages", [])[desde:]
     falas = [
-        texto for m in estado.get("messages", [])
+        texto for m in novas
         if isinstance(m, AIMessage) and (texto := texto_da_mensagem(m.content))
     ]
     return falas[-1] if falas else MSG_INSTABILIDADE
+
+
+def atendimento_encerrado(atendimento: Atendimento, session_id: str) -> bool:
+    """Se a sessão retomada já estava encerrada, a tela precisa refletir isso."""
+    try:
+        snapshot = atendimento.grafo.get_state(
+            {"configurable": {"thread_id": session_id}}
+        )
+    except Exception:
+        return False
+    return bool((snapshot.values or {}).get("finished")) if snapshot else False
 
 
 def historico_visivel(atendimento: Atendimento, session_id: str) -> list[dict]:
