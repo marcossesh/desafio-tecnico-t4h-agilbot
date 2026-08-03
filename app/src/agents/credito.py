@@ -159,13 +159,26 @@ def _reavaliacao_automatica(state: dict) -> dict | None:
             "_mensagem_reavaliacao": resultado.mensagem}
 
 
+def _handler_iniciar_entrevista(args: dict, state: dict) -> tuple[str, dict]:
+    """Entra na entrevista com a janela zerada.
+
+    `entrevista_inicio` delimita onde os 5 assuntos precisam ter aparecido. Se o cliente
+    abandona a entrevista e volta depois, manter o índice antigo faria a janela abranger a
+    tentativa anterior — e assuntos já mencionados lá autorizariam respostas nesta.
+    """
+    conteudo, efeitos = make_handoff_handler("entrevista", "entrevista financeira")(
+        args, state
+    )
+    return conteudo, {**efeitos, "entrevista_inicio": None}
+
+
 TOOLS_BASE = [consultar_limite, solicitar_aumento, iniciar_entrevista, atender_cambio,
               encerrar_atendimento]
 
 HANDLERS: dict[str, Handler] = {
     "consultar_limite": _handler_consultar_limite,
     "solicitar_aumento": _handler_solicitar_aumento,
-    "iniciar_entrevista": make_handoff_handler("entrevista", "entrevista financeira"),
+    "iniciar_entrevista": _handler_iniciar_entrevista,
     "atender_cambio": make_handoff_handler("cambio", "câmbio"),
     "encerrar_atendimento": handler_encerrar,
     "consultar_base_conhecimento": handler_consultar_conhecimento,

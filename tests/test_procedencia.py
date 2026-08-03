@@ -248,6 +248,42 @@ class TestMotorPublicaOSinal:
         assert updates["numeros_inventados"] == []
 
 
+class TestEntrevistaTemSaida:
+    """A entrevista era um beco sem saída — e o modelo improvisava para escapar.
+
+    Numa sessão real o cliente pediu cotação no meio da entrevista. O agente não tinha
+    ferramenta de câmbio nem rota de saída, então afirmou ter cotação de iene e yuan e
+    inventou "R$ 0,037 por iene". A guarda de procedência acusou o número, mas a causa era
+    a falta de rota: sem ferramenta, o modelo preenche a lacuna com texto.
+    """
+
+    def test_entrevista_alcanca_cambio_e_credito(self):
+        from src.agents import entrevista
+
+        nomes = {t.name for t in entrevista.TOOLS}
+        assert {"atender_cambio", "atender_credito"} <= nomes
+
+    def test_todo_agente_tem_ao_menos_uma_saida(self):
+        """Nenhum agente pode prender o cliente: ou encaminha, ou encerra."""
+        from src.agents import cambio, credito, entrevista, triagem
+
+        saidas = {"atender_credito", "atender_cambio", "iniciar_entrevista",
+                  "encerrar_atendimento"}
+        for nome, mod in (("triagem", triagem), ("entrevista", entrevista)):
+            assert {t.name for t in mod.TOOLS} & saidas, nome
+        for nome, mod in (("credito", credito), ("cambio", cambio)):
+            assert {t.name for t in mod.TOOLS_BASE} & saidas, nome
+
+    def test_iniciar_entrevista_zera_a_janela(self, servicos):
+        """Voltar para uma segunda entrevista não pode herdar a janela da primeira."""
+        from src.agents.credito import _handler_iniciar_entrevista
+
+        _conteudo, efeitos = _handler_iniciar_entrevista({}, {"entrevista_inicio": 7})
+
+        assert efeitos["entrevista_inicio"] is None
+        assert efeitos["current_agent"] == "entrevista"
+
+
 class TestHonestidadeSobreOEscopo:
     """O prompt promete que crédito não registra dado financeiro. Isso precisa ser verdade.
 

@@ -120,6 +120,11 @@ Regras:
   respostas exatamente como o cliente as deu. Não repita o resumo antes.
 - Ao anunciar o score recalculado, use EXATAMENTE o número devolvido pela ferramenta.
 - Se a ferramenta apontar um campo inválido, repergunte SOMENTE aquele campo.
+- Você NÃO cota moedas nem consulta limite aqui, e não tem como fazer isso. Se o cliente
+  pedir cotação, chame `atender_cambio`; se quiser falar de limite ou desistir da
+  entrevista, chame `atender_credito`. NUNCA responda sobre cotação por conta própria —
+  qualquer valor que você escrevesse seria inventado. Avise que a entrevista recomeça do
+  zero se ele sair agora, e confirme antes de chamar a ferramenta.
 Depois disso o atendimento volta sozinho para a análise de crédito — não avise o cliente.
 """
 

@@ -9,7 +9,7 @@ from langgraph.graph import END
 from langgraph.types import Command
 
 from src.agents.base import CHAVE_HANDOFF, Handler, run_agent_turn
-from src.agents.common import encerrar_atendimento, handler_encerrar
+from src.agents.common import encerrar_atendimento, handler_encerrar, make_handoff_handler
 from src.agents.contexto import cliente_do_estado
 from src.agents.prompts import INSTRUCAO_SEM_CLIENTE, PROMPT_ENTREVISTA
 from src.core.logging import get_logger
@@ -42,6 +42,20 @@ def registrar_entrevista(
     """Registra as 5 respostas da entrevista e recalcula o score do cliente. Chame apenas
     quando tiver TODAS as respostas, repassando-as como o cliente as informou
     (`tipo_emprego`: formal, autônomo ou desempregado; `tem_dividas`: sim ou não)."""
+    return ""
+
+
+@tool
+def atender_cambio() -> str:
+    """Assume o atendimento de cotação de moedas. Use quando o cliente quiser falar de
+    câmbio — a entrevista em andamento é abandonada."""
+    return ""
+
+
+@tool
+def atender_credito() -> str:
+    """Volta ao atendimento de crédito sem concluir a entrevista. Use quando o cliente
+    desistir da entrevista ou quiser tratar de limite."""
     return ""
 
 
@@ -125,15 +139,21 @@ def _handler_registrar(args: dict, state: dict) -> tuple[str, dict]:
     )
 
 
-TOOLS = [registrar_entrevista, encerrar_atendimento]
+# Sem as duas saídas, a entrevista era um beco sem saída: o cliente que pedia uma cotação
+# no meio dela topava com um agente sem ferramenta de câmbio e sem como sair — e o modelo
+# improvisava, afirmando ter cotações e inventando o valor. A guarda de procedência pegou
+# ("números sem procedência: 0.04"), mas a causa era a falta de rota, não o modelo.
+TOOLS = [registrar_entrevista, atender_cambio, atender_credito, encerrar_atendimento]
 
 HANDLERS: dict[str, Handler] = {
     "registrar_entrevista": _handler_registrar,
+    "atender_cambio": make_handoff_handler("cambio", "câmbio"),
+    "atender_credito": make_handoff_handler("credito", "crédito"),
     "encerrar_atendimento": handler_encerrar,
 }
 
 
-def node(state: dict) -> Command[Literal["credito", "__end__"]]:
+def node(state: dict) -> Command[Literal["credito", "cambio", "__end__"]]:
     estado = dict(state)
     # Marca onde a entrevista começou. O "sim" que aceitou a oferta fica do lado de fora
     # da janela — senão ele autorizaria sozinho a resposta sobre dívidas.
