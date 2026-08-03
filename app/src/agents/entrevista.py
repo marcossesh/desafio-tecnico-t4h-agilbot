@@ -139,10 +139,9 @@ def _handler_registrar(args: dict, state: dict) -> tuple[str, dict]:
     )
 
 
-# Sem as duas saídas, a entrevista era um beco sem saída: o cliente que pedia uma cotação
-# no meio dela topava com um agente sem ferramenta de câmbio e sem como sair — e o modelo
-# improvisava, afirmando ter cotações e inventando o valor. A guarda de procedência pegou
-# ("números sem procedência: 0.04"), mas a causa era a falta de rota, não o modelo.
+# As duas saídas não são conveniência. Sem elas, o cliente que muda de assunto no meio da
+# entrevista encontra um agente que não tem a ferramenta pedida nem rota para sair — e o
+# modelo preenche a lacuna inventando a resposta, em vez de encaminhar.
 TOOLS = [registrar_entrevista, atender_cambio, atender_credito, encerrar_atendimento]
 
 HANDLERS: dict[str, Handler] = {

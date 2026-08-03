@@ -148,6 +148,7 @@ def run_agent_turn(
     novas_mensagens: list = []
     updates: dict = {"current_agent": agent_name}
     destino: str | None = None
+    degradou = False
 
     for _ in range(MAX_ITERACOES_TURNO):
         try:
@@ -155,6 +156,7 @@ def run_agent_turn(
         except Exception as exc:
             logger.error("Falha ao invocar LLM no agente %s: %s", agent_name, exc)
             novas_mensagens.append(AIMessage(content=MSG_INSTABILIDADE))
+            degradou = True
             break
 
         if provider := _nome_do_provider(resposta):
@@ -213,6 +215,16 @@ def run_agent_turn(
         redigida = _redigir_resposta(modelo, convo, agent_name)
         if redigida is not None:
             novas_mensagens.append(redigida)
+
+    # Turno que degradou não encerra o atendimento. Um handler pode ter decidido `finished`
+    # antes de o LLM falhar, e então o encerramento sobrevive sem o texto que o explicaria:
+    # o cliente perde a conversa sem saber por quê. Descartar só o `finished` mantém a
+    # sessão recuperável na tentativa seguinte.
+    if degradou and updates.pop("finished", None):
+        logger.warning(
+            "Encerramento descartado no agente %s: o turno degradou antes de comunicá-lo.",
+            agent_name,
+        )
 
     updates["vazamento_detectado"] = _detectar_vazamento(novas_mensagens, agent_name)
     updates["numeros_inventados"] = _detectar_numeros_inventados(

@@ -11,6 +11,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from src.agents.base import CHAVE_HANDOFF, run_agent_turn, sanitizar_historico
 from src.agents.contexto import render_contexto
 from src.core.constants import MAX_TENTATIVAS_AUTH, MSG_INSTABILIDADE
+from src.core.utils import texto_da_mensagem
 from tests.fakes import FakeChatModel, chama, fala
 
 
@@ -144,6 +145,56 @@ class TestHandoff:
         assert destino is None
         assert updates["authenticated"] is True
         assert updates["cpf"] == "123"
+
+
+class TestFalhaDoLLMNaoEncerra:
+    """Encerrar em silêncio é pior que falhar: o cliente perde a conversa sem saber por quê.
+
+    Caso real: o handler decidiu `finished` (conta bloqueada) e a chamada seguinte ao LLM
+    devolveu 500. O `finished` sobreviveu, o texto que o explicava não.
+    """
+
+    def _modelo_que_falha_na_segunda(self, monkeypatch):
+        class FalhaNaSegunda(FakeChatModel):
+            def _generate(self, *a, **k):
+                from langchain_core.outputs import ChatGeneration, ChatResult
+
+                object.__setattr__(self, "_n", getattr(self, "_n", 0) + 1)
+                if self._n == 1:
+                    return ChatResult(
+                        generations=[ChatGeneration(message=chama("encerrar_tudo"))]
+                    )
+                raise RuntimeError("500 INTERNAL")
+
+        fake = FalhaNaSegunda([])
+        monkeypatch.setattr("src.agents.base.get_chat_model", lambda: fake)
+        return fake
+
+    def test_finished_do_handler_e_descartado(self, monkeypatch):
+        self._modelo_que_falha_na_segunda(monkeypatch)
+
+        def encerra(_args, _state):
+            return "[interno] pronto", {"finished": True}
+
+        updates, _destino = run_agent_turn(
+            {"messages": []}, "triagem", "P", [], {"encerrar_tudo": encerra}
+        )
+
+        assert not updates.get("finished")
+        assert MSG_INSTABILIDADE in texto_da_mensagem(updates["messages"][-1].content)
+
+    def test_outros_efeitos_do_handler_sobrevivem(self, monkeypatch):
+        """Só o encerramento é descartado — o resto do estado continua válido."""
+        self._modelo_que_falha_na_segunda(monkeypatch)
+
+        def encerra(_args, _state):
+            return "[interno] pronto", {"finished": True, "cpf_informado": "11144477735"}
+
+        updates, _destino = run_agent_turn(
+            {"messages": []}, "triagem", "P", [], {"encerrar_tudo": encerra}
+        )
+
+        assert updates["cpf_informado"] == "11144477735"
 
 
 class TestRedesDeSeguranca:

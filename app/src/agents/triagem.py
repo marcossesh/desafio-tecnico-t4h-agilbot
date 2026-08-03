@@ -95,10 +95,10 @@ def _handler_autenticar(args: dict, state: dict) -> tuple[str, dict]:
             },
         )
 
-    # Conta bloqueada não é falha de credencial: o CPF e a data conferiram. Contar como
-    # tentativa punia o cliente por um estado que ele não controla — e a mensagem "restam
-    # 2 tentativas" ainda o convidava a repetir a mesma data correta, sem chance de dar
-    # certo. Encerra aqui, porque o atendimento automático não tem como prosseguir.
+    # Conta bloqueada não é falha de credencial: o CPF e a data conferiram. Contá-la como
+    # tentativa puniria o cliente por um estado que ele não controla, e o convite a "tentar
+    # de novo" não teria como dar certo. Encerra aqui — o atendimento automático não
+    # prossegue com a conta nesse status.
     if resultado.conta_bloqueada:
         return (
             interno(
