@@ -56,8 +56,28 @@ class TestParseData:
     def test_formatos_rejeitados(self, texto: str):
         assert parse_data(texto) is None
 
-    def test_ano_com_dois_digitos(self):
-        assert parse_data("14/05/90") == date(1990, 5, 14)
+    @pytest.mark.parametrize(
+        "texto", ["14/05/90", "14 05 90", "14 de maio de 90"]
+    )
+    def test_ano_com_dois_digitos_vale_em_qualquer_forma(self, texto: str):
+        """Aceitar dois dígitos na forma numérica e recusar na textual era arbitrário.
+
+        `14/05/90` sempre funcionou; `14 de maio de 90` não — mesma ambiguidade, dois
+        comportamentos. Era resíduo da regra que exigia 4 dígitos no ramo textual.
+        """
+        assert parse_data(texto) == date(1990, 5, 14)
+
+    def test_numero_extra_na_frase_nao_vira_ano(self):
+        """O bug que motivou a regra dos 4 dígitos: o último número virava o ano.
+
+        "às 10h" fazia a data virar 2010 — errada, plausível, e consumindo uma tentativa
+        de autenticação sem o cliente entender por quê.
+        """
+        assert parse_data("14 de maio de 1990 as 10h") == date(1990, 5, 14)
+
+    def test_dois_digitos_com_numero_extra_e_ambiguo_demais(self):
+        """Sem um ano de 4 dígitos para ancorar, três números não têm leitura segura."""
+        assert parse_data("14 de maio de 90 as 10h") is None
 
 
 class TestAuthService:

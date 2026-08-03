@@ -49,13 +49,10 @@ def parse_data(texto: str) -> date | None:
     for nome, mes in _MESES.items():
         if nome in t:
             numeros = re.findall(r"\d+", t)
-            # O ano precisa ter 4 dígitos. Tomar "o último número da frase" faz
-            # "14 de maio de 1990 às 10h" virar o ano 10 — e o pivô de dois dígitos
-            # expande para 2010: uma data errada e plausível, pior que devolver None.
-            anos = [n for n in numeros if len(n) == 4]
-            if not anos or not numeros:
+            ano = _ano_do_texto(numeros)
+            if ano is None or not numeros:
                 return None
-            return _montar(int(anos[-1]), mes, int(numeros[0]))
+            return _montar(ano, mes, int(numeros[0]))
 
     numeros = re.findall(r"\d+", t)
 
@@ -72,6 +69,27 @@ def parse_data(texto: str) -> date | None:
     if len(numeros[0]) == 4:
         return _montar(a, b, c)
     return _montar(c, b, a)
+
+
+def _ano_do_texto(numeros: list[str]) -> int | None:
+    """Descobre o ano numa data escrita por extenso ("14 de maio de 1990").
+
+    Tomar simplesmente o último número faz "14 de maio de 1990 às 10h" virar o ano 10, que
+    o pivô expande para 2010: data errada, plausível, e que ainda consome uma tentativa de
+    autenticação sem o cliente entender por quê.
+
+    Exigir 4 dígitos resolvia isso, mas recusava "14 de maio de 90" — que a forma numérica
+    (`14/05/90`) já aceitava. Rejeitar só na forma textual era arbitrário.
+
+    A regra atual separa os dois casos: havendo um número de 4 dígitos, ele é o ano; não
+    havendo, só se aceita o ano de dois dígitos quando a frase tem exatamente dois números
+    (dia e ano), o que mantém "às 10h" fora.
+    """
+    if quatro := [n for n in numeros if len(n) == 4]:
+        return int(quatro[-1])
+    if len(numeros) == 2:
+        return int(numeros[1])
+    return None
 
 
 def _montar(ano: int, mes: int, dia: int) -> date | None:
