@@ -95,6 +95,22 @@ def _handler_autenticar(args: dict, state: dict) -> tuple[str, dict]:
             },
         )
 
+    # Conta bloqueada não é falha de credencial: o CPF e a data conferiram. Contar como
+    # tentativa punia o cliente por um estado que ele não controla — e a mensagem "restam
+    # 2 tentativas" ainda o convidava a repetir a mesma data correta, sem chance de dar
+    # certo. Encerra aqui, porque o atendimento automático não tem como prosseguir.
+    if resultado.conta_bloqueada:
+        return (
+            interno(
+                f"Os dados conferem, mas {resultado.mensagem}. Informe isso ao cliente com "
+                "cordialidade e encerre. NÃO trate como erro de digitação, não peça os "
+                "dados de novo e NÃO invente telefone, e-mail, site ou qualquer canal de "
+                "contato: você não tem esse dado. Se ele perguntar como resolver, diga que "
+                "precisa procurar o banco pelos canais oficiais dele."
+            ),
+            {"finished": True},
+        )
+
     tentativas = tentativas_atuais + 1
     if tentativas >= MAX_TENTATIVAS_AUTH:
         return (

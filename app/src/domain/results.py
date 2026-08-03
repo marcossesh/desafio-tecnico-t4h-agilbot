@@ -13,6 +13,10 @@ class ResultadoAuth(BaseModel):
     ok: bool
     mensagem: str = ""
     cliente: Cliente | None = None
+    # Credencial conferiu, mas a conta não permite atendimento automático. É diferente de
+    # falha de credencial: o cliente não conserta isso tentando de novo, então não pode
+    # consumir tentativa.
+    conta_bloqueada: bool = False
 
 
 class ResumoLimite(BaseModel):

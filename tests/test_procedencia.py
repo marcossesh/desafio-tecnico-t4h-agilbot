@@ -248,6 +248,48 @@ class TestMotorPublicaOSinal:
         assert updates["numeros_inventados"] == []
 
 
+class TestContaBloqueadaNaoConsomeTentativa:
+    """Conta bloqueada não é erro de digitação — o cliente não conserta repetindo.
+
+    Felipe informou CPF e data corretos e ouviu "sua autenticação falhou (restam 2
+    tentativas)". A credencial conferiu; o que falhou foi o status da conta. Contar como
+    tentativa punia o cliente por um estado que ele não controla, e a mensagem ainda o
+    convidava a repetir a mesma data certa.
+    """
+
+    def test_handler_encerra_sem_incrementar(self, servicos):
+        from src.agents.triagem import _handler_autenticar
+
+        _conteudo, efeitos = _handler_autenticar(
+            {"cpf": "98765432100", "data_nascimento": "08/09/1988"},
+            {"auth_attempts": 0},
+        )
+
+        assert "auth_attempts" not in efeitos
+        assert efeitos["finished"] is True
+
+    def test_credencial_errada_continua_consumindo(self, servicos):
+        from src.agents.triagem import _handler_autenticar
+
+        _conteudo, efeitos = _handler_autenticar(
+            {"cpf": "98765432100", "data_nascimento": "01/01/1900"},
+            {"auth_attempts": 0},
+        )
+
+        assert efeitos["auth_attempts"] == 1
+
+    def test_instrucao_proibe_inventar_canal_de_contato(self, servicos):
+        """O agente inventou "0800 123 4567" quando o cliente pediu para desbloquear."""
+        from src.agents.triagem import _handler_autenticar
+
+        conteudo, _efeitos = _handler_autenticar(
+            {"cpf": "98765432100", "data_nascimento": "08/09/1988"},
+            {"auth_attempts": 0},
+        )
+
+        assert "NÃO invente telefone" in conteudo
+
+
 class TestEntrevistaTemSaida:
     """A entrevista era um beco sem saída — e o modelo improvisava para escapar.
 

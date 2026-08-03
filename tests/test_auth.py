@@ -141,6 +141,16 @@ class TestAuthService:
         assert not resultado.ok
         assert "bloqueada" in resultado.mensagem
 
+    def test_conta_bloqueada_e_sinalizada_a_parte(self, cliente_repo: ClienteRepository):
+        """Distinguir de falha de credencial é o que impede consumir tentativa à toa."""
+        servico = AuthService(cliente_repo)
+
+        bloqueada = servico.autenticar(CPF_FELIPE, "08/09/1988")
+        credencial_errada = servico.autenticar(CPF_FELIPE, "01/01/1900")
+
+        assert bloqueada.conta_bloqueada is True
+        assert credencial_errada.conta_bloqueada is False
+
     def test_csv_ausente_nao_levanta_excecao(self, tmp_path: Path):
         """Falha de leitura vira mensagem controlada — o atendimento não quebra."""
         servico = AuthService(ClienteRepository(tmp_path / "inexistente.csv"))

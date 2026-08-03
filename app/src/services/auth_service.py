@@ -209,6 +209,7 @@ class AuthService:
         if not cliente.conta_ativa:
             return ResultadoAuth(
                 ok=False,
+                conta_bloqueada=True,
                 mensagem=(
                     f"a conta está com status '{cliente.status_conta.value}' e não permite "
                     "atendimento automático"
