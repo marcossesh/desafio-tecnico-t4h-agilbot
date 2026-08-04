@@ -123,6 +123,12 @@ def _handler_registrar(args: dict, state: dict) -> tuple[str, dict]:
     efeitos: dict = {"cliente": resultado.cliente_atualizado.model_dump(mode="json")}
     efeitos[CHAVE_HANDOFF] = "credito"
     efeitos["current_agent"] = "credito"
+    # Ao reassumir, o crédito relê um histórico em que o cliente acabou de recitar renda,
+    # vínculo, despesas, dependentes e dívidas — e o `PROMPT_CREDITO` tem regra que dispara
+    # justamente nisso, mandando oferecer a entrevista. Sem esta marca ele reabre a
+    # entrevista que acabou de terminar, o handoff silencia o resultado e o cliente perde a
+    # aprovação que já está valendo no CSV.
+    efeitos["entrevista_concluida"] = True
 
     # O texto é imperativo quanto ao número porque a versão anterior ("score recalculado:
     # 540 -> 467") deixava os dois valores soltos: o modelo anunciou um terceiro número,

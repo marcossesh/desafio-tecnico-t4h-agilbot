@@ -59,7 +59,14 @@ def render_contexto(state: dict) -> str:
             f"(avaliado com score {ultima.get('score_avaliado', '?')})."
         )
 
-    if state.get("entrevista_oferecida"):
+    if state.get("entrevista_concluida"):
+        linhas.append(
+            "- A entrevista financeira JÁ FOI CONCLUÍDA nesta conversa e o score acima "
+            "já é o recalculado. NÃO inicie nem ofereça outra entrevista: os dados "
+            "financeiros que aparecem na conversa são as respostas dela, não dados novos "
+            "para registrar. Apenas comunique o resultado do pedido ao cliente."
+        )
+    elif state.get("entrevista_oferecida"):
         linhas.append(
             "- A entrevista financeira JÁ foi oferecida ao cliente nesta conversa. "
             "Não ofereça de novo se ele já recusou."
