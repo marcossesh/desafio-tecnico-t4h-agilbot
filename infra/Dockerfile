@@ -25,18 +25,24 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev
 
 COPY app ./app
+COPY infra/entrypoint.sh /usr/local/bin/entrypoint.sh
 
 RUN groupadd -g "${GID}" agilbot 2>/dev/null || true \
  && useradd -m -u "${UID}" -g "${GID}" agilbot 2>/dev/null || true \
  && mkdir -p /app/app/logs \
+ && chmod +x /usr/local/bin/entrypoint.sh \
  && chown -R "${UID}:${GID}" /app /opt/venv
 
 USER ${UID}:${GID}
 
 EXPOSE 8501
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+# A janela inicial cobre a indexação da base de conhecimento, que roda no entrypoint
+# antes do Streamlit atender.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
     CMD python -c "import urllib.request;urllib.request.urlopen('http://localhost:8501/_stcore/health')"
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 CMD ["streamlit", "run", "app/ui/streamlit_app.py", \
      "--server.address=0.0.0.0", "--server.port=8501", "--server.headless=true"]

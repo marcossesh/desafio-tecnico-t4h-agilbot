@@ -6,6 +6,7 @@ from functools import lru_cache
 from langchain_core.language_models.chat_models import BaseChatModel
 
 from src.core.config import get_settings
+from src.core.constants import MAX_RETRIES_LLM
 from src.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -30,7 +31,7 @@ def _gemini() -> BaseChatModel | None:
     return ChatGoogleGenerativeAI(
         model=settings.gemini_model,
         google_api_key=settings.google_api_key,
-        max_retries=1,
+        max_retries=MAX_RETRIES_LLM,
         **_amostragem(),
     )
 
@@ -44,7 +45,7 @@ def _groq() -> BaseChatModel | None:
     return ChatGroq(
         model=settings.groq_model,
         api_key=settings.groq_api_key,
-        max_retries=1,
+        max_retries=MAX_RETRIES_LLM,
         **_amostragem(),
     )
 
