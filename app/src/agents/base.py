@@ -20,6 +20,12 @@ Handler = Callable[[dict, dict], tuple[str, dict]]
 
 CHAVE_HANDOFF = "__handoff__"
 
+# Texto já pronto para o cliente, que um handler deixa como rede antes de o LLM redigir a
+# resposta. Só é usado quando o turno degrada: aí a ferramenta já gravou seu efeito, e
+# `MSG_INSTABILIDADE` afirmaria uma falha que não houve — o cliente foi informado de que o
+# pedido não passou enquanto o novo limite já estava valendo no CSV.
+CHAVE_RESUMO = "__resumo_cliente__"
+
 _VAZAMENTO = re.compile(REGEX_VAZAMENTO, re.IGNORECASE)
 
 INSTRUCAO_RESPOSTA_FINAL = SystemMessage(
@@ -131,8 +137,15 @@ def run_agent_turn(
     system_prompt: str,
     tools: list,
     handlers: dict[str, Handler],
+    resumo_degradado: str | None = None,
 ) -> tuple[dict, str | None]:
-    """Executa um turno e devolve `(atualizações_do_estado, destino_do_handoff)`."""
+    """Executa um turno e devolve `(atualizações_do_estado, destino_do_handoff)`.
+
+    `resumo_degradado` é o texto a mostrar ao cliente se o turno degradar antes de o
+    modelo redigir a resposta — para efeitos que o nó já aplicou *antes* de chamar o
+    motor, como a reavaliação automática do crédito. Um handler que produza efeito
+    durante o turno usa `CHAVE_RESUMO` nos seus `efeitos`, que tem precedência.
+    """
     try:
         modelo = get_chat_model()
     except LLMIndisponivelError as exc:
@@ -155,7 +168,13 @@ def run_agent_turn(
             resposta = modelo_com_tools.invoke(convo)
         except Exception as exc:
             logger.error("Falha ao invocar LLM no agente %s: %s", agent_name, exc)
-            novas_mensagens.append(AIMessage(content=MSG_INSTABILIDADE))
+            resumo = updates.get(CHAVE_RESUMO) or resumo_degradado
+            if resumo:
+                logger.warning(
+                    "Turno degradou após efeito aplicado no agente %s; informando o "
+                    "resultado ao cliente sem passar pelo modelo.", agent_name,
+                )
+            novas_mensagens.append(AIMessage(content=resumo or MSG_INSTABILIDADE))
             degradou = True
             break
 
@@ -215,6 +234,9 @@ def run_agent_turn(
         redigida = _redigir_resposta(modelo, convo, agent_name)
         if redigida is not None:
             novas_mensagens.append(redigida)
+
+    # A rede não é estado: serve a este turno e não pode sobreviver a ele.
+    updates.pop(CHAVE_RESUMO, None)
 
     # Turno que degradou não encerra o atendimento. Um handler pode ter decidido `finished`
     # antes de o LLM falhar, e então o encerramento sobrevive sem o texto que o explicaria:

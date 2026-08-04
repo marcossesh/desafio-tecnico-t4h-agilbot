@@ -8,7 +8,12 @@ from __future__ import annotations
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-from src.agents.base import CHAVE_HANDOFF, run_agent_turn, sanitizar_historico
+from src.agents.base import (
+    CHAVE_HANDOFF,
+    CHAVE_RESUMO,
+    run_agent_turn,
+    sanitizar_historico,
+)
 from src.agents.contexto import render_contexto
 from src.core.constants import MAX_TENTATIVAS_AUTH, MSG_INSTABILIDADE
 from src.core.utils import texto_da_mensagem
@@ -195,6 +200,80 @@ class TestFalhaDoLLMNaoEncerra:
         )
 
         assert updates["cpf_informado"] == "11144477735"
+
+
+class TestEfeitoAplicadoSempreEComunicado:
+    """Efeito gravado e confirmação perdida é o pior par possível num contexto financeiro.
+
+    Caso real, observado contra a API: a ferramenta aprovou o aumento e gravou o novo
+    limite no CSV; a chamada seguinte, a que redigiria a resposta, tomou 429 do free tier.
+    O cliente leu "instabilidade, tente novamente" com R$ 4.000,00 já valendo em disco —
+    uma falha afirmada que não houve, e um pedido formal registrado que ele não conhece.
+    """
+
+    def _falha_na_segunda(self, monkeypatch, tool: str):
+        class FalhaNaSegunda(FakeChatModel):
+            def _generate(self, *a, **k):
+                from langchain_core.outputs import ChatGeneration, ChatResult
+
+                object.__setattr__(self, "_n", getattr(self, "_n", 0) + 1)
+                if self._n == 1:
+                    return ChatResult(generations=[ChatGeneration(message=chama(tool))])
+                raise RuntimeError("429 RESOURCE_EXHAUSTED")
+
+        monkeypatch.setattr(
+            "src.agents.base.get_chat_model", lambda: FalhaNaSegunda([])
+        )
+
+    def test_resumo_do_handler_substitui_a_mensagem_de_instabilidade(self, monkeypatch):
+        self._falha_na_segunda(monkeypatch, "aumentar")
+        pronto = "Aumento para R$ 4.000,00 aprovado."
+
+        def aumentar(_args, _state):
+            return "[interno] aprovado", {CHAVE_RESUMO: pronto, "cliente": {"x": 1}}
+
+        updates, _ = run_agent_turn(estado(), "credito", "P", [], {"aumentar": aumentar})
+
+        assert updates["messages"][-1].content == pronto
+        assert MSG_INSTABILIDADE not in [m.content for m in updates["messages"]]
+
+    def test_a_rede_nao_vaza_para_o_estado(self, monkeypatch):
+        """Serve ao turno; persistir faria um turno futuro repetir a confirmação antiga."""
+        self._falha_na_segunda(monkeypatch, "aumentar")
+
+        def aumentar(_args, _state):
+            return "[interno] ok", {CHAVE_RESUMO: "Aumento aprovado."}
+
+        updates, _ = run_agent_turn(estado(), "credito", "P", [], {"aumentar": aumentar})
+
+        assert CHAVE_RESUMO not in updates
+
+    def test_resumo_do_no_cobre_efeito_anterior_ao_turno(self, monkeypatch):
+        """A reavaliação automática aplica o aumento antes de o motor rodar."""
+        class Explode(FakeChatModel):
+            def _generate(self, *a, **k):
+                raise RuntimeError("429 RESOURCE_EXHAUSTED")
+
+        monkeypatch.setattr("src.agents.base.get_chat_model", lambda: Explode([]))
+
+        updates, _ = run_agent_turn(
+            estado(), "credito", "P", [], {},
+            resumo_degradado="Aumento para R$ 12.000,00 aprovado.",
+        )
+
+        assert updates["messages"][-1].content == "Aumento para R$ 12.000,00 aprovado."
+
+    def test_sem_efeito_algum_a_mensagem_generica_continua(self, monkeypatch):
+        """Nada foi gravado: aí "tente novamente" é a verdade e deve permanecer."""
+        class Explode(FakeChatModel):
+            def _generate(self, *a, **k):
+                raise RuntimeError("429 RESOURCE_EXHAUSTED")
+
+        monkeypatch.setattr("src.agents.base.get_chat_model", lambda: Explode([]))
+
+        updates, _ = run_agent_turn(estado(), "credito", "P", [], {})
+
+        assert updates["messages"][-1].content == MSG_INSTABILIDADE
 
 
 class TestRedesDeSeguranca:

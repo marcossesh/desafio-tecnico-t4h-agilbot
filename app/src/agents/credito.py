@@ -7,7 +7,7 @@ from langchain_core.tools import tool
 from langgraph.graph import END
 from langgraph.types import Command
 
-from src.agents.base import Handler, run_agent_turn
+from src.agents.base import CHAVE_RESUMO, Handler, run_agent_turn
 from src.agents.common import (
     consultar_base_conhecimento,
     encerrar_atendimento,
@@ -107,6 +107,9 @@ def _handler_solicitar_aumento(args: dict, state: dict) -> tuple[str, dict]:
 
     resultado = get_services().credito.solicitar_aumento(cliente, novo_limite)
     efeitos = {**_efeitos_da_solicitacao(resultado), **_atualizar_cliente(resultado)}
+    # A partir daqui o pedido já está registrado e o limite pode já ter mudado no CSV. Se o
+    # LLM cair antes de redigir, é esta frase que o cliente lê — não "tente novamente".
+    efeitos[CHAVE_RESUMO] = resultado.mensagem
 
     if resultado.status is StatusPedido.REJEITADO:
         # Acima do teto de todas as faixas, a entrevista não é um caminho: é uma promessa
@@ -195,10 +198,14 @@ def tools() -> list:
 def node(state: dict) -> Command[Literal["entrevista", "cambio", "__end__"]]:
     prompt = PROMPT_CREDITO
     estado = dict(state)
+    resumo_degradado: str | None = None
 
     if (reavaliacao := _reavaliacao_automatica(state)) is not None:
         mensagem = reavaliacao.pop("_mensagem_reavaliacao", "")
         estado.update(reavaliacao)
+        # A reavaliação já aplicou o efeito antes de o motor rodar: se o turno degradar,
+        # o cliente precisa saber o resultado, não que houve instabilidade.
+        resumo_degradado = mensagem or None
         prompt = (
             f"{prompt}\n\nRESULTADO DA REAVALIAÇÃO AUTOMÁTICA (o score do cliente mudou "
             f"e o pedido anterior foi reavaliado): {mensagem}\nComunique esse resultado "
@@ -208,5 +215,7 @@ def node(state: dict) -> Command[Literal["entrevista", "cambio", "__end__"]]:
     else:
         reavaliacao = {}
 
-    updates, destino = run_agent_turn(estado, NOME, prompt, tools(), HANDLERS)
+    updates, destino = run_agent_turn(
+        estado, NOME, prompt, tools(), HANDLERS, resumo_degradado=resumo_degradado
+    )
     return Command(goto=destino or END, update={**reavaliacao, **updates})
