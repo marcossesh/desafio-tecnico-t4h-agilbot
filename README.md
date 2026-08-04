@@ -8,7 +8,7 @@ A interface é **Streamlit** e invoca o grafo **no mesmo processo**. O estado de
 atendimento vive no checkpointer do LangGraph, em **PostgreSQL**, que também hospeda os
 vetores da base de conhecimento (**pgvector**).
 
-**311 testes · 88% de cobertura · nenhuma chamada de rede na suíte.**
+**328 testes · 88% de cobertura · nenhuma chamada de rede na suíte.**
 
 > Decisões em detalhe e mais dezesseis problemas enfrentados:
 > [`docs/DECISOES.md`](docs/DECISOES.md).
@@ -80,7 +80,7 @@ app/
     agents/        os 4 agentes: prompts, ferramentas, handlers e o motor de turno
     orchestration/ estado, grafo e container de injeção de dependência
   data/          CSVs (fonte de dados e artefatos gerados em runtime)
-tests/  infra/   suíte sem chamadas externas · Dockerfile, compose, init do pgvector
+tests/  infra/   suíte sem chamadas externas · Dockerfile, compose, entrypoint, init do pgvector
 ```
 
 ### O grafo
@@ -196,8 +196,10 @@ exceção — inclusive uma exceção inesperada dentro de um handler, capturada
 | --- | --- | --- |
 | LLM | Cota do Gemini esgotada | Fallback automático para o Groq |
 | LLM | Nenhum provedor disponível | Mensagem de instabilidade; conversa de pé |
+| LLM | Falha **depois** de a ferramenta gravar | Cliente recebe o resultado já apurado, não "tente novamente" |
 | Sessões | Sem `POSTGRES_URL` ou banco fora | `MemorySaver` |
 | RAG | Sem chave ou sem Postgres | Ferramenta não é registrada no `bind_tools` |
+| RAG | Indexação do start falha | Container sobe; agente diz que não tem a informação |
 | Câmbio | API fora ou timeout | Informa; nunca inventa cotação |
 | CSVs | Arquivo ausente ou linha corrompida | Erro controlado; linhas válidas seguem usáveis |
 
@@ -365,15 +367,15 @@ mensagem de instabilidade.
 make docker
 # APP_UID/APP_GID fazem os CSVs do bind mount pertencerem ao seu usuário.
 # Porta 5432 ocupada? POSTGRES_PORT=5433 make docker
-
-# indexar a base de conhecimento (opcional, exige GOOGLE_API_KEY)
-docker compose -f infra/docker-compose.yml exec app python -m src.rag.ingest
+# A base de conhecimento é indexada no start do container (exige GOOGLE_API_KEY).
+# Para reindexar à força depois de editar os .md:
+docker compose -f infra/docker-compose.yml exec app python -m src.rag.ingest --forcar
 
 # B — Local, com uv. Sem POSTGRES_URL: sessões em memória e RAG desligado.
 make install && make run
 
 # Testes
-make test    # 311 testes com cobertura (88%)
+make test    # 328 testes com cobertura (88%)
 make lint    # ruff
 ```
 

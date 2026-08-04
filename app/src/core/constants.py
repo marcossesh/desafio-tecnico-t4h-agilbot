@@ -49,6 +49,11 @@ PESO_DEPENDENTES: Final[dict[int, int]] = {0: 100, 1: 80, 2: 60, 3: 30}
 MAX_DEPENDENTES_TABELADO: Final[int] = 3
 PESO_DIVIDAS: Final[dict[bool, int]] = {True: -100, False: 100}
 
+# Absorve 429 esporádico e soluço de rede. Não vence cota de free tier esgotada — o
+# 429 do Gemini pede ~57s de espera, e prender o cliente por isso é pior que degradar;
+# para cota, quem resolve é o fallback de provedor em `providers/llm.py`.
+MAX_RETRIES_LLM: Final[int] = 3
+
 AGENTE_PADRAO: Final[str] = "triagem"
 AGENTES: Final[tuple[str, ...]] = ("triagem", "credito", "entrevista", "cambio")
 MAX_ITERACOES_TURNO: Final[int] = 6
