@@ -1,4 +1,4 @@
-# AgilBot — Agente Bancário Inteligente
+# AgilBot: Agente Bancário Inteligente
 
 Atendimento do **Banco Ágil** conduzido por **quatro agentes de IA especializados**,
 orquestrados com **LangGraph**. Para o cliente existe **um único atendente**: as trocas de
@@ -42,7 +42,7 @@ banco, quando disponível.
 **A ideia central.** O sistema separa duas responsabilidades que nunca se misturam: **o LLM
 cuida de linguagem** (interpreta a intenção e escolhe a ferramenta) e **o código cuida de
 regra** (teto por faixa, 3 tentativas, cálculo de score, gravação). A costura é o par
-`@tool` + handler — o `@tool` declara só o formulário que o modelo enxerga e tem corpo
+`@tool` + handler: o `@tool` declara só o formulário que o modelo enxerga e tem corpo
 vazio; quem executa é um handler Python que devolve o texto ao modelo **e** os efeitos no
 estado. Disso decorre a propriedade que mais importa: **o modelo nunca decide se um aumento
 é aprovado**. Ele pede a operação; a política decide.
@@ -63,7 +63,7 @@ Streamlit (UI)  ──invoke(thread_id)──▶  LangGraph
                                    repositories/ ──▶ CSVs   PostgreSQL + pgvector
 ```
 
-Dependências em uma direção só — `agents → services → repositories → domain` — com `core`
+Dependências em uma direção só (`agents → services → repositories → domain`), com `core`
 transversal e `providers` isolando o mundo externo. Nenhuma regra de negócio conhece o LLM;
 nenhum agente conhece o formato dos CSVs.
 
@@ -118,12 +118,12 @@ graph TD;
 	classDef last fill:#bfb6fc
 ```
 
-A entrada é condicional e retoma o `current_agent` restaurado do checkpointer — sem isso,
+A entrada é condicional e retoma o `current_agent` restaurado do checkpointer. Sem isso,
 toda mensagem recomeçaria na triagem.
 
 O nó **`encerrado`** é a barreira de encerramento no domínio: responde sem chamar o LLM.
 Sem ele, `finished` seria apenas o `disabled` do campo de chat, e qualquer caminho fora da
-UI — refresh, outra aba, sessão retomada do Postgres — executaria operações sobre um
+UI (refresh, outra aba, sessão retomada do Postgres) executaria operações sobre um
 atendimento já encerrado.
 
 ### O ciclo de um turno
@@ -139,18 +139,18 @@ conversa.**
    atendente. `tool_calls` e `ToolMessage` de turnos anteriores são descartados.
 3. O modelo escolhe ferramentas; cada uma executa um **handler** determinístico sobre
    `services/`, que devolve texto ao modelo **e** efeitos no estado.
-4. Havendo **handoff**, o texto do agente de origem é descartado — quem fala é o destino.
+4. Havendo **handoff**, o texto do agente de origem é descartado: quem fala é o destino.
 5. Se o turno terminaria sem resposta, o motor **força uma redação final** sem ferramentas,
    ainda com os resultados à vista.
 6. Duas **guardas de runtime** conferem a saída: uma acusa menção a transferência de
    atendimento, outra acusa números que nenhuma ferramenta produziu. Acendem o painel de
    diagnóstico em vez de derrubar a resposta.
 
-**Um turno concreto** — cliente autenticado digita *"quero aumentar meu limite para 10 mil"*:
+**Um turno concreto.** Cliente autenticado digita *"quero aumentar meu limite para 10 mil"*:
 
 ```
 prompt do agente + "Diego · autenticado · limite R$ 800 · score 380"
-histórico enviado ao LLM: só as falas — nenhuma tool call de turnos anteriores
+histórico enviado ao LLM: só as falas, nenhuma tool call de turnos anteriores
   → o modelo chama  atender_credito           handoff; o texto da triagem é descartado
   → o nó `credito` assume no MESMO turno
   → o modelo chama  solicitar_aumento(10000)  grava `pendente`, avalia contra a faixa
@@ -174,12 +174,12 @@ trabalhado.
 **Ciclo de vida de uma solicitação.** O pedido nasce `pendente` **antes** de qualquer
 julgamento. Duas transições, deliberadamente diferentes: na avaliação inicial a **mesma
 linha** vira `aprovado`/`rejeitado`; na reavaliação pós-entrevista é criada uma **linha
-nova** — mutar `rejeitado → aprovado` apagaria a história que o arquivo existe para
+nova**. Mutar `rejeitado → aprovado` apagaria a história que o arquivo existe para
 registrar. Sem chave primária (são só 5 colunas), a identidade é o índice devolvido no
 `append`, com timestamp ISO 8601 em microssegundos.
 
 **Escrita segura.** Todo CSV é reescrito de forma atômica: temporário no mesmo diretório,
-`fsync`, `os.replace`, preservando a permissão — `open("w")` truncaria o arquivo antes de
+`fsync`, `os.replace`, preservando a permissão. `open("w")` truncaria o arquivo antes de
 gravar. A serialização entre threads depende de duas condições fixadas em teste: **um
 repositório por arquivo** (o lock vive no objeto) e o **ciclo read-modify-write inteiro sob
 o lock**. Aprovações usam ainda **compare-and-set** sobre o limite.
@@ -190,7 +190,7 @@ o lock**. Aprovações usam ainda **compare-and-set** sobre o limite.
 ### Degradação controlada
 
 Falhas previsíveis são contidas na camada onde ocorrem e viram mensagem ao cliente, não
-exceção — inclusive uma exceção inesperada dentro de um handler, capturada pelo motor.
+exceção, inclusive uma exceção inesperada dentro de um handler, capturada pelo motor.
 
 | Componente | Situação | Comportamento |
 | --- | --- | --- |
@@ -215,7 +215,7 @@ exceção — inclusive uma exceção inesperada dentro de um handler, capturada
 - **Consulta de limite** com score, teto da faixa e taxa de juros.
 - **Solicitação de aumento** registrada como `pendente`, avaliada contra a política e
   transicionada; aprovação persiste o novo limite.
-- **Oferta de entrevista** ao rejeitar e **reavaliação automática** quando o score sobe —
+- **Oferta de entrevista** ao rejeitar e **reavaliação automática** quando o score sobe,
   decidida no nó, sem depender do modelo.
 - **Entrevista** com os 5 dados validados por Pydantic: campo incompreensível volta pelo
   nome, e só ele é reperguntado.
@@ -245,9 +245,9 @@ viverem nessa escala, a faixa de topo vira letra morta e um cliente com score al
 **rebaixado** de uma entrevista honesta.
 
 **Solução.** O enunciado especifica fórmula e pesos, mas **não fornece o conteúdo de
-`score_limite.csv` nem de `clientes.csv`** — as duas tabelas tinham de ser escritas do zero.
+`score_limite.csv` nem de `clientes.csv`**: as duas tabelas tinham de ser escritas do zero.
 Escrevi-as contra a escala real: a faixa de topo começa em **601**, não em 801. Os pesos
-ficaram idênticos aos sugeridos — eles vêm com números concretos que o avaliador usa para
+ficaram idênticos aos sugeridos, porque eles vêm com números concretos que o avaliador usa para
 conferir o cálculo; a tabela de faixas não vem. Mexi onde eu era o autor.
 
 Dois testes protegem isso: um assevera que **nenhuma faixa é inalcançável**, outro que o
@@ -257,7 +257,7 @@ cliente do fluxo-vitrine sobe de score **e** muda de faixa.
 
 No handoff, o nó de destino recebe o mesmo `messages`, com `tool_calls` de ferramentas que
 **não estão no seu `bind_tools`**. Provedores com function calling são estritos quanto a
-nomes não declarados e `tool_call_id` órfãos — e Gemini e Groq divergem, então um thread que
+nomes não declarados e `tool_call_id` órfãos, e Gemini e Groq divergem, então um thread que
 caia no fallback precisa produzir mensagens que **ambos** aceitem. A saída é sanitizar.
 
 Só que isso cria o problema oposto: o CPF coletado no turno 1 vivia num `ToolMessage` e
@@ -272,32 +272,32 @@ seguinte".
 ### 3. O lock existia; a serialização, não
 
 Um passe adversarial mostrou `clientes.csv` perdendo atualizações em **30 de 30** execuções
-com duas threads. O `threading.Lock` estava correto — faltavam as duas condições: o
+com duas threads. O `threading.Lock` estava correto; faltavam as duas condições: o
 container criava um `ClienteRepository` por serviço (três locks para o mesmo arquivo) e o
 read-modify-write lia fora do lock.
 
 **Solução.** Instância compartilhada, `CsvRepository.mutate()` com o ciclo inteiro sob o
 lock, e compare-and-set na gravação. Depois disso, **0 de 30**. Coberto por
-`tests/test_concorrencia.py` — a classe de cenário que cobertura de linha não alcança,
+`tests/test_concorrencia.py`, a classe de cenário que cobertura de linha não alcança,
 porque o defeito está no interleaving.
 
 ### 4. O modelo anunciou um score que não existia
 
-Numa sessão contra o Gemini real, a ferramenta devolveu `540 → 467`, gravou 467 — e o
+Numa sessão contra o Gemini real, a ferramenta devolveu `540 → 467`, gravou 467, e o
 cliente leu **"seu novo score calculado é 780"**. Questionado depois, o modelo chamou o score
 novo de "anterior". É a pior classe de falha em contexto financeiro: número plausível,
 errado, com aparência de resposta normal. Nenhum teste com LLM falso pega isso.
 
 **Solução em duas camadas.** O retorno da ferramenta virou imperativo e cita um único número
 (`use EXATAMENTE 467`). E o motor ganhou uma **guarda de procedência numérica**, complemento
-da sanitização: tudo que o modelo pôde legitimamente ver — system prompt, histórico
-sanitizado, ferramentas *deste* turno — é autorizado; o resto vai para o log e acende o
+da sanitização: tudo que o modelo pôde legitimamente ver (system prompt, histórico
+sanitizado, ferramentas *deste* turno) é autorizado; o resto vai para o log e acende o
 painel. Diagnóstico, não bloqueio: derrubar a resposta por um falso positivo sairia mais
 caro.
 
 ### 5. A entrevista respondia sozinha a pergunta que não fez
 
-O agente perguntou renda, emprego, despesas e dependentes — pulou "possui dívidas ativas?" e
+O agente perguntou renda, emprego, despesas e dependentes, pulou "possui dívidas ativas?" e
 chamou a ferramenta com `tem_dividas="não"`. São **200 pontos** de score e uma mudança de
 faixa (teto de R$ 1.000 contra R$ 15.000) decididos por um dado que o cliente nunca deu.
 
@@ -321,28 +321,30 @@ frameworks sugeridos:
 | Alternativa | Por que não |
 | --- | --- |
 | **CrewAI** | Modela times com papéis e delegação; abstrai o controle de fluxo por turno, que aqui precisa ser explícito. |
-| **LangChain** (ReAct) | Dá o loop ferramenta↔modelo, mas não o estado tipado nem transições determinísticas — eu construiria por fora o que o `StateGraph` já dá. |
+| **LangChain** (ReAct) | Dá o loop ferramenta↔modelo, mas não o estado tipado nem transições determinísticas; eu construiria por fora o que o `StateGraph` já dá. |
 | **LlamaIndex** | Excelente em recuperação, que aqui é acessória (o RAG). Não é orquestrador de agentes com estado. |
-| **Google ADK** | Encaixaria com o Gemini, mas amarraria ao ecossistema Google — e o desenho prevê fallback para o Groq, então a orquestração precisa ser neutra quanto ao provedor. |
+| **Google ADK** | Encaixaria com o Gemini, mas amarraria ao ecossistema Google, e o desenho prevê fallback para o Groq, então a orquestração precisa ser neutra quanto ao provedor. |
 
 **Ferramenta (schema) + handler (execução).** O `@tool` declara só o que o LLM enxerga; a
 execução é determinística, isolada em `services/` e testada sem LLM. Consequência:
-**acrescentar um quinto agente é criar um módulo no mesmo formato e registrar um nó** — o
+**acrescentar um quinto agente é criar um módulo no mesmo formato e registrar um nó**. O
 motor não muda.
 
-**Gemini primário → Groq como fallback**, ambos com free tier, `max_retries=1` no primário
-para cair rápido. O modelo que atendeu cada turno aparece no painel, porque os modelos Llama
-são mais fracos em roteamento multi-ferramenta e a queda seria invisível.
+**Gemini primário → Groq como fallback**, ambos com free tier. `MAX_RETRIES_LLM = 3` absorve
+429 esporádico e soluço de rede; cota esgotada não é caso de retry, porque o 429 do Gemini pede ~57s
+de espera, e prender o cliente por isso é pior que degradar. Para cota, quem resolve é o segundo
+provedor. O modelo que atendeu cada turno aparece no painel, porque os modelos Llama são mais
+fracos em roteamento multi-ferramenta e a queda seria invisível.
 
 **`gemini-3.5-flash-lite`, escolhido por sondagem.** A Google não publica mais os limites por
-modelo, e `gemini-2.5-flash-lite` responde **404 — "no longer available to new users"**.
+modelo, e `gemini-2.5-flash-lite` responde **404, "no longer available to new users"**.
 Testei a API com a chave em mãos, uma requisição por modelo, exercitando uma tool call real.
 A versão é fixada de propósito: `gemini-flash-lite-latest` é alias móvel. Tabela da sondagem
 em [`docs/DECISOES.md`](docs/DECISOES.md).
 
 **Streamlit invocando o grafo no mesmo processo.** O enunciado pede "uma UI simples para
 testes". Uma API HTTP acrescentaria serialização, um serviço a subir e uma fonte de erro sem
-entregar nada ao avaliador — o grafo *é* a interface e o checkpointer *é* a sessão.
+entregar nada ao avaliador. O grafo *é* a interface e o checkpointer *é* a sessão.
 
 **Um único Postgres para sessões e vetores**, deixando o compose com dois serviços em vez de
 quatro. **Domínio em Pydantic**, com a normalização de linguagem natural em validadores
@@ -363,7 +365,7 @@ Uma chave já basta. **Sem nenhuma chave a aplicação sobe**, mas o atendente r
 mensagem de instabilidade.
 
 ```bash
-# A — Docker (recomendada). Interface em http://localhost:8501
+# A) Docker (recomendada). Interface em http://localhost:8501
 make docker
 # APP_UID/APP_GID fazem os CSVs do bind mount pertencerem ao seu usuário.
 # Porta 5432 ocupada? POSTGRES_PORT=5433 make docker
@@ -371,7 +373,7 @@ make docker
 # Para reindexar à força depois de editar os .md:
 docker compose -f infra/docker-compose.yml exec app python -m src.rag.ingest --forcar
 
-# B — Local, com uv. Sem POSTGRES_URL: sessões em memória e RAG desligado.
+# B) Local, com uv. Sem POSTGRES_URL: sessões em memória e RAG desligado.
 make install && make run
 
 # Testes
@@ -379,8 +381,8 @@ make test    # 328 testes com cobertura (88%)
 make lint    # ruff
 ```
 
-A suíte cobre as regras determinísticas **e a orquestração completa** — grafo, handoffs,
-memória entre turnos e sessões — com um LLM falso, **sem nenhuma chamada externa**. O mesmo
+A suíte cobre as regras determinísticas **e a orquestração completa** (grafo, handoffs,
+memória entre turnos e sessões) com um LLM falso, **sem nenhuma chamada externa**. O mesmo
 conjunto roda no CI.
 
 ### Clientes de teste
@@ -432,5 +434,5 @@ propósito desse agente. No painel lateral, `agente atual` percorre
 | Integridade sob escrita concorrente | `CsvRepository.mutate`, `atualizar_limite_se` | `test_concorrencia.py` |
 | Procedência de números e respostas | `agents/base.py`, `agents/entrevista.py` | `test_procedencia.py` |
 | Encerramento efetivo do atendimento | `orchestration/graph.py` (nó `encerrado`) | `test_graph.py::TestCicloDeVida` |
-| Registro de erro para análise posterior | `core/logging.py` (correlação por sessão) | — |
+| Registro de erro para análise posterior | `core/logging.py` (correlação por sessão) | n/a |
 | UI simples para testes | `app/ui/` | `test_ui.py` |
