@@ -15,8 +15,11 @@ install:
 	uv python install 3.12
 	uv sync
 
+# `--server.headless=true` pelo mesmo motivo que no CMD do Dockerfile: sem ele, a primeira
+# execução numa máquina que nunca abriu Streamlit cai no onboarding, que pede e-mail no
+# terminal e aborta com "Error 255" quando não há TTY.
 run:
-	uv run streamlit run app/ui/streamlit_app.py
+	uv run streamlit run app/ui/streamlit_app.py --server.headless=true
 
 test:
 	uv run pytest
